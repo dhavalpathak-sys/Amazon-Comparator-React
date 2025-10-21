@@ -8,12 +8,12 @@
 
 ### Backend
 
-#### Option 1: Node Server
+#### 1: Node Server
 1. Navigate to backend directory: `cd backend`
 2. Install dependencies: `npm install`
 3. Run server: `node server.js`
 
-#### Option 2: Python Server
+#### 2: Python Server
 1. Navigate to backend directory: `cd backend`
 2. Create virtual environment: `python3 -m venv venv`
 3. Activate virtual environment:
