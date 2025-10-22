@@ -264,55 +264,21 @@ def scrape_amazon_content(r, url):
                         except:
                             pass
 
-        # Method 4: If we still don't have the right bullets, create them from the product title and known features
+        # Method 4: DISABLED - Do NOT use template features as they can be misleading
+        # Only use actual scraped features from the product page
         if len(bullets) < 3:
-            print("🔍 Creating feature bullets from product context...", file=sys.stderr)
-            
-            # Extract key features from the product title
-            title_text = title.lower()
-            
-            # Define feature mappings based on common patterns
-            feature_templates = {
-                'performance t-shirt': [
-                    "Advanced polyester microfilament fabric with elastane blend for durability and flexibility",
-                    "Hydrophobic and breathable material wicks moisture away quickly to keep you dry",
-                    "Ultralight weight design ensures minimal restriction and maximum comfort",
-                    "Spandex fibers provide excellent stretch for total freedom of movement",
-                    "Classic round neck and half sleeves for versatile athletic style"
-                ],
-                'hydrophobic': [
-                    "Advanced moisture-wicking technology keeps you dry during intense workouts",
-                    "Breathable fabric allows air circulation for enhanced comfort",
-                    "Quick-drying material prevents sweat buildup",
-                    "Lightweight construction for unrestricted movement",
-                    "Durable fabric maintains shape after multiple washes"
-                ],
-                'athletic': [
-                    "Performance-oriented design for sports and physical activities",
-                    "Flexible material allows full range of motion",
-                    "Comfortable fit for extended wear during exercise",
-                    "Moisture management system enhances workout experience",
-                    "Athletic styling suitable for various sports activities"
-                ]
-            }
-            
-            # Add features based on title keywords
-            for keyword, features in feature_templates.items():
-                if keyword in title_text:
-                    for feature in features:
-                        if feature not in bullets:
-                            bullets.append(feature)
-                            print(f"   - Template Feature: {feature[:80]}...", file=sys.stderr)
-                    break
+            print("⚠️  Warning: Found fewer than 3 feature bullets. Will use actual scraped features only.", file=sys.stderr)
+            print("   (Template feature generation is disabled to ensure accuracy)", file=sys.stderr)
 
-        # Method 5: Final fallback - extract meaningful sentences from description that sound like features
-        if len(bullets) < 3:
-            print("🔍 Extracting feature-like sentences from description...", file=sys.stderr)
+        # Method 5: Final fallback - ONLY use this if NO features were found at all
+        # Extract meaningful sentences from description that sound like actual product features
+        if len(bullets) == 0:
+            print("🔍 No features found. Extracting feature-like sentences from description as last resort...", file=sys.stderr)
             
             description_text = product_description.lower()
             feature_keywords = ['fabric', 'material', 'blend', 'comfort', 'breathable', 'moisture', 
                             'wicking', 'hydrophobic', 'lightweight', 'ultralight', 'stretch', 
-                            'flexibility', 'design', 'performance', 'athletic']
+                            'flexibility', 'design', 'fit', 'style', 'collar', 'sleeve']
             
             sentences = re.split(r'[.!?]+', product_description)
             for sentence in sentences:
@@ -321,17 +287,48 @@ def scrape_amazon_content(r, url):
                     len(sentence) > 30 and 
                     len(sentence) < 150 and
                     any(keyword in sentence.lower() for keyword in feature_keywords) and
-                    sentence not in bullets):
+                    sentence not in bullets and
+                    len(bullets) < 5):  # Limit to 5 features max
                     
                     bullets.append(sentence)
                     print(f"   - Desc Feature: {sentence[:80]}...", file=sys.stderr)
+        elif len(bullets) < 3:
+            print(f"   ℹ️  Only found {len(bullets)} actual feature(s) from product page", file=sys.stderr)
 
-        # Clean and filter the final bullets
+        # Clean and filter the final bullets - Be LESS aggressive to keep real features
         def is_high_quality_feature(text):
-            """Filter to keep only high-quality feature bullet points"""
+            """Filter to keep only high-quality feature bullet points and exclude reviews"""
             text_lower = text.lower()
             
-            # Exclude description-like text
+            # CRITICAL: Exclude customer reviews - these should NEVER be in features
+            review_indicators = [
+                'reviewed in',
+                'verified purchase',
+                'out of 5 stars',
+                'helpful',
+                'report',
+                'read more',
+                'images in this review',
+                'one person found this',
+                'people found this',
+                'size:',
+                'colour:',
+                'color:',
+                'style:',
+                'i bought',
+                'i purchased',
+                'i recently',
+                'great quality and comfortable fit!',
+                'the quality of',
+                'highly recommend',
+                'stars'  # Catches rating stars like "5.0 out of 5 stars"
+            ]
+            
+            for indicator in review_indicators:
+                if indicator in text_lower:
+                    return False
+            
+            # Exclude description-like text (long marketing paragraphs)
             exclude_phrases = [
                 'experience superior',
                 'crafted with advanced',
@@ -354,26 +351,11 @@ def scrape_amazon_content(r, url):
                 if phrase in text_lower:
                     return False
             
-            # Include feature-like patterns
-            include_patterns = [
-                r'.*fabric.*',
-                r'.*material.*',
-                r'.*blend.*',
-                r'.*comfort.*',
-                r'.*breathable.*',
-                r'.*moisture.*',
-                r'.*wicking.*',
-                r'.*hydrophobic.*',
-                r'.*lightweight.*',
-                r'.*ultralight.*',
-                r'.*stretch.*',
-                r'.*flexibility.*',
-                r'.*design.*',
-                r'.*performance.*',
-                r'.*athletic.*'
-            ]
+            # For short features (like "Stylish | Casual"), accept them if they're not too short
+            if len(text) >= 10:
+                return True
             
-            return any(re.search(pattern, text_lower) for pattern in include_patterns)
+            return False
 
         # Apply final filtering
         filtered_bullets = []
@@ -384,25 +366,19 @@ def scrape_amazon_content(r, url):
                 cleaned = re.sub(r'[\u200e\u200f]', '', cleaned)
                 cleaned = cleaned.strip()
                 
-                if cleaned and len(cleaned) > 20 and len(cleaned) < 120:
+                # Accept features that are at least 10 chars (lowered from 20)
+                if cleaned and len(cleaned) >= 10:
                     filtered_bullets.append(cleaned)
                     print(f"✅ Final Feature: {cleaned[:80]}...", file=sys.stderr)
 
         bullets = filtered_bullets
 
-        # If we still don't have good features, use the specific ones you want
+        # DISABLED: Do NOT use predefined features - show actual scraped features only
+        # Even if we have fewer than 3 features, it's better to show the real ones
+        # than to add fake/generic features that may not match the product
         if len(bullets) < 3:
-            print("🔍 Using predefined feature bullets...", file=sys.stderr)
-            predefined_features = [
-                "Advanced polyester microfilament fabric with elastane blend for durability and flexibility",
-                "Hydrophobic and breathable material wicks moisture away quickly to keep you dry",
-                "Ultralight weight design ensures minimal restriction and maximum comfort",
-                "Spandex fibers provide excellent stretch for total freedom of movement",
-                "Classic round neck and half sleeves for versatile athletic style"
-            ]
-            bullets = predefined_features
-            for feature in predefined_features:
-                print(f"   - Predefined: {feature[:80]}...", file=sys.stderr)
+            print(f"⚠️  Warning: Only found {len(bullets)} feature bullets", file=sys.stderr)
+            print("   (Not adding generic features - using actual scraped data only)", file=sys.stderr)
 
         print(f"✅ Final feature bullet count: {len(bullets)}", file=sys.stderr)
         for i, bullet in enumerate(bullets, 1):

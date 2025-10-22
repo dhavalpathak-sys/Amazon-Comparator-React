@@ -483,6 +483,11 @@ const FinalPage = () => {
 
     // Build comparison data from existing product
     if (existingProductData) {
+      // Extract features from existing product ONLY (not gold standard)
+      const existingFeatures = extractFeatures(existingProductData);
+      console.log('✨ Features extracted from EXISTING product:', existingFeatures);
+      console.log('🔍 Existing product features property:', existingProductData.features);
+      
       const data = {
         // Original Product (Existing Product)
         originalTitle: existingProductData.title || 'N/A',
@@ -505,7 +510,7 @@ const FinalPage = () => {
 
         // Product Details
         description: existingProductData.description || 'No description available',
-        features: extractFeatures(existingProductData),
+        features: existingFeatures,
         
         // Brand Information
         brandComparison: {
@@ -621,17 +626,26 @@ const FinalPage = () => {
   };
 
   const extractFeatures = (product) => {
-    if (!product) return [];
+    console.log('🔧 extractFeatures called with product:', product);
+    if (!product) {
+      console.log('⚠️ No product provided to extractFeatures');
+      return [];
+    }
     
-    // If features array exists, use it
+    // If features array exists, use it (THIS IS THE PRIMARY SOURCE)
     if (product.features && Array.isArray(product.features) && product.features.length > 0) {
+      console.log('✅ Found features array in product:', product.features);
+      console.log('📊 Number of features:', product.features.length);
       return product.features;
     }
+    
+    console.log('⚠️ No features array found in product, trying fallback methods');
     
     // Try to extract from description
     const features = [];
     if (product.description) {
       features.push(product.description);
+      console.log('📝 Added description as feature:', product.description);
     }
     
     // Add generic features from product details
@@ -642,6 +656,7 @@ const FinalPage = () => {
       features.push(`Type: ${product.productDetails['Generic Name']}`);
     }
     
+    console.log('🔚 Final features array:', features.length > 0 ? features : ['No features available']);
     return features.length > 0 ? features : ['No features available'];
   };
 
@@ -955,7 +970,9 @@ const FinalPage = () => {
 
               {/* Features */}
               <div className="border-b border-[#e7e7e7] pb-4">
-                <h3 className="text-[#0F1111] font-medium text-lg mb-2">About this item</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-[#0F1111] font-medium text-lg">About this item</h3>                 
+                </div>
                 <ul className="list-disc pl-5 space-y-1 text-sm text-[#0F1111]">
                   {comparisonData?.features && comparisonData.features.length > 0 ? (
                     comparisonData.features.map((feature, index) => (
