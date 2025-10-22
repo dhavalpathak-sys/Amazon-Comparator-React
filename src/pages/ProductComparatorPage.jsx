@@ -116,6 +116,15 @@ const ProductComparator = () => {
   const [showAddAttribute, setShowAddAttribute] = useState(false);
   const [newAttributeKey, setNewAttributeKey] = useState('');
   const [newAttributeValue, setNewAttributeValue] = useState('');
+  const [selectedAttributeType, setSelectedAttributeType] = useState('');
+
+  // Predefined attribute options
+  const predefinedAttributes = [
+    { key: 'material', label: 'Material' },
+    { key: 'color', label: 'Color' },
+    { key: 'size', label: 'Size' },
+    { key: 'custom', label: 'Custom Attribute' }
+  ];
 
   // Loading states for AI generation
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
@@ -690,11 +699,19 @@ const ProductComparator = () => {
   };
 
   const handleAddAttribute = () => {
-    if (newAttributeKey.trim() && newAttributeValue.trim()) {
+    const attributeKey = selectedAttributeType === 'custom' 
+      ? newAttributeKey.trim().toLowerCase().replace(/\s+/g, '') 
+      : selectedAttributeType;
+    
+    const attributeLabel = selectedAttributeType === 'custom' 
+      ? newAttributeKey.trim() 
+      : predefinedAttributes.find(a => a.key === selectedAttributeType)?.label || attributeKey;
+    
+    if (attributeKey && newAttributeValue.trim()) {
       const newId = productAttributes.length;
       const newAttr = {
         id: newId,
-        key: newAttributeKey.trim(),
+        key: attributeLabel,
         goldenValue: '',
         scrapedValue: newAttributeValue.trim(),
         accepted: false,
@@ -704,6 +721,7 @@ const ProductComparator = () => {
       setAttributeValues(prev => ({ ...prev, [newId]: newAttributeValue.trim() }));
       setNewAttributeKey('');
       setNewAttributeValue('');
+      setSelectedAttributeType('');
       setShowAddAttribute(false);
     }
   };
@@ -1040,24 +1058,50 @@ const ProductComparator = () => {
                     <div></div>
                     <div className="bg-blue-50 border border-blue-300 rounded-lg p-3">
                       <div className="space-y-2">
-                        <input
-                          type="text"
-                          placeholder="Attribute Name (e.g., Brand)"
+                        {/* Dropdown for attribute selection */}
+                        <select
                           className="border border-gray-300 rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          value={newAttributeKey}
-                          onChange={e => setNewAttributeKey(e.target.value)}
-                        />
+                          value={selectedAttributeType}
+                          onChange={e => setSelectedAttributeType(e.target.value)}
+                        >
+                          <option value="">Select Attribute Type</option>
+                          {predefinedAttributes.map(attr => (
+                            <option key={attr.key} value={attr.key}>
+                              {attr.label}
+                            </option>
+                          ))}
+                        </select>
+                        
+                        {/* Show custom attribute name input only if "Custom Attribute" is selected */}
+                        {selectedAttributeType === 'custom' && (
+                          <input
+                            type="text"
+                            placeholder="Custom Attribute Name (e.g., Brand)"
+                            className="border border-gray-300 rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            value={newAttributeKey}
+                            onChange={e => setNewAttributeKey(e.target.value)}
+                          />
+                        )}
+                        
+                        {/* Attribute value input */}
                         <input
                           type="text"
-                          placeholder="Attribute Value (e.g., BIBA)"
+                          placeholder={`Enter ${selectedAttributeType === 'custom' ? 'attribute' : selectedAttributeType || 'attribute'} value...`}
                           className="border border-gray-300 rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           value={newAttributeValue}
                           onChange={e => setNewAttributeValue(e.target.value)}
+                          disabled={!selectedAttributeType}
                         />
+                        
                         <div className="flex gap-2">
                           <button
-                            className="flex items-center space-x-1 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
+                            className={`flex items-center space-x-1 px-3 py-1.5 rounded-md transition-colors text-sm ${
+                              selectedAttributeType && newAttributeValue.trim() && (selectedAttributeType !== 'custom' || newAttributeKey.trim())
+                                ? 'bg-green-600 text-white hover:bg-green-700'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
                             onClick={handleAddAttribute}
+                            disabled={!selectedAttributeType || !newAttributeValue.trim() || (selectedAttributeType === 'custom' && !newAttributeKey.trim())}
                           >
                             <Check className="h-3.5 w-3.5" />
                             <span>Add</span>
@@ -1068,6 +1112,7 @@ const ProductComparator = () => {
                               setShowAddAttribute(false);
                               setNewAttributeKey('');
                               setNewAttributeValue('');
+                              setSelectedAttributeType('');
                             }}
                           >
                             Cancel
@@ -1084,7 +1129,7 @@ const ProductComparator = () => {
                       onClick={() => setShowAddAttribute(true)}
                     >
                       <Plus className="h-4 w-4" />
-                      <span>Add Attribute</span>
+                      <span>Add New Attribute</span>
                     </button>
                   </div>
                 )}

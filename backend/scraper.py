@@ -32,33 +32,112 @@ HEADERS = {
     "sec-ch-ua-platform": '"Windows"'
 }
 
-def scrape_amazon(url):
+def is_valid_product_image(url):
+    """Validate if URL is likely a real product image (not icon/sprite)"""
+    if not url or 'http' not in url:
+        return False
+    
+    # Exclude common non-product images
+    exclude_patterns = [
+        'sprite', 'icon', 'logo', 'arrow', 'pixel', 
+        'transparent', 'badge', 'star', 'prime', 'nav-', 
+        'btn-', 'button', '1x1', 'spacer'
+    ]
+    
+    if any(pattern in url.lower() for pattern in exclude_patterns):
+        return False
+    
+    # Must be from Amazon CDN
+    valid_domains = [
+        'images-na.ssl-images-amazon.com',
+        'm.media-amazon.com',
+        'images-amazon.com'
+    ]
+    
+    if not any(domain in url for domain in valid_domains):
+        return False
+    
+    # Should have image extension or format indicator
+    if not re.search(r'\.(jpg|jpeg|png|webp)|/images/I/', url, re.IGNORECASE):
+        return False
+    
+    return True
+
+def scrape_amazon_with_retry(url, max_retries=2):
+    """Scrape with exponential backoff retry logic - max 2 attempts"""
+    # Fix URL if missing scheme
+    if url and not url.startswith(('http://', 'https://')):
+        if url.startswith('www.'):
+            url = 'https://' + url
+        elif url.startswith('amazon.'):
+            url = 'https://' + url
+        else:
+            # Assume it's an Amazon URL
+            url = 'https://' + url
+        print(f"🔧 Fixed URL scheme: {url}", file=sys.stderr)
+    
+    for attempt in range(max_retries):
+        try:
+            timeout = 15 + (attempt * 10)  # 15s, 25s
+            delay = random.uniform(2, 5) if attempt > 0 else random.uniform(1, 3)
+            
+            print(f"🔍 Attempt {attempt + 1}/{max_retries}: Starting to scrape: {url}", file=sys.stderr)
+            time.sleep(delay)
+            
+            # Create a session to maintain cookies
+            session = requests.Session()
+            
+            # Set cookies that Amazon expects
+            session.cookies.set('session-id', '000-0000000-0000000')
+            session.cookies.set('i18n-prefs', 'INR')
+            session.cookies.set('lc-acbin', 'en_IN')
+            
+            # Make the request with enhanced headers and session
+            r = session.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
+            
+            print(f"📡 Response status code: {r.status_code}", file=sys.stderr)
+            
+            if r.status_code == 503:
+                print(f"⚠️ Amazon service temporarily unavailable (503), retrying...", file=sys.stderr)
+                continue
+            elif r.status_code != 200:
+                if attempt < max_retries - 1:
+                    print(f"⚠️ Status {r.status_code}, retrying...", file=sys.stderr)
+                    continue
+                return {"success": False, "error": f"Failed to fetch page. Status code: {r.status_code}"}
+            
+            # Successfully got the page
+            return scrape_amazon_content(r, url)
+            
+        except requests.Timeout:
+            print(f"⏱️ Attempt {attempt + 1}: Timeout after {timeout}s", file=sys.stderr)
+            if attempt < max_retries - 1:
+                print(f"⏱️ Retrying with longer timeout...", file=sys.stderr)
+                continue
+            return {"success": False, "error": "Please try again. The product page is taking too long to load."}
+            
+        except requests.RequestException as e:
+            print(f"❌ Attempt {attempt + 1}: Network error: {e}", file=sys.stderr)
+            if attempt < max_retries - 1:
+                continue
+            return {"success": False, "error": "Please try again. Unable to connect to Amazon."}
+            
+        except Exception as e:
+            print(f"❌ Attempt {attempt + 1}: Unexpected error: {e}", file=sys.stderr)
+            if attempt < max_retries - 1:
+                continue
+            return {"success": False, "error": f"Please try again. Error: {str(e)}"}
+    
+    return {"success": False, "error": "Please try again. All attempts failed after 2 retries."}
+
+def scrape_amazon_content(r, url):
+    """Extract content from successful response"""
     try:
-        print(f"🔍 Starting to scrape: {url}", file=sys.stderr)
+        # Check if we got a CAPTCHA page (now a warning, not blocker)
+        captcha_detected = "api-services-support@amazon.com" in r.text or "Type the characters you see in this image" in r.text
         
-        # Add random delay to mimic human behavior
-        time.sleep(random.uniform(1, 3))
-        
-        # Create a session to maintain cookies
-        session = requests.Session()
-        
-        # Set cookies that Amazon expects
-        session.cookies.set('session-id', '000-0000000-0000000')
-        session.cookies.set('i18n-prefs', 'INR')
-        session.cookies.set('lc-acbin', 'en_IN')
-        
-        # Make the request with enhanced headers and session
-        r = session.get(url, headers=HEADERS, timeout=30, allow_redirects=True)
-        
-        print(f"📡 Response status code: {r.status_code}", file=sys.stderr)
-        
-        if r.status_code != 200:
-            return {"success": False, "error": f"Failed to fetch page. Status code: {r.status_code}"}
-        
-        # Check if we got a CAPTCHA page
-        if "api-services-support@amazon.com" in r.text or "Type the characters you see in this image" in r.text:
-            print("⚠️ CAPTCHA detected - Amazon is blocking automated requests", file=sys.stderr)
-            return {"success": False, "error": "Amazon CAPTCHA detected. Please try again later or use a different IP."}
+        if captcha_detected:
+            print("⚠️ CAPTCHA detected - attempting limited extraction", file=sys.stderr)
         
         soup = BeautifulSoup(r.text, "html.parser")
 
@@ -208,12 +287,12 @@ def scrape_amazon(url):
                 dynamic_data = img.get('data-a-dynamic-image', '{}')
                 image_dict = json.loads(dynamic_data)
                 for img_url in image_dict.keys():
-                    if img_url not in seen_urls and 'http' in img_url:
+                    if img_url not in seen_urls and is_valid_product_image(img_url):
                         # Convert to highest quality using ._SL1500_.
                         high_quality_url = re.sub(r'\._[A-Z0-9_]+\.', '._SL1500_.', img_url)
                         images.append(high_quality_url)
                         seen_urls.add(img_url)
-                        print(f"� Found dynamic image: {high_quality_url[:80]}...", file=sys.stderr)
+                        print(f"✅ Found dynamic image: {high_quality_url[:80]}...", file=sys.stderr)
                         if len(images) >= 7:
                             break
             except Exception as e:
@@ -221,24 +300,30 @@ def scrape_amazon(url):
         
         # Method 2: JavaScript/Script tags (contains high-res image URLs)
         if len(images) < 7:
-            script_tags = soup.find_all('script', string=re.compile('colorImages|imageBlockNR|ImageBlockATF'))
+            # Enhanced pattern to catch more image data structures
+            script_tags = soup.find_all('script', string=re.compile('colorImages|imageBlockNR|ImageBlockATF|imageGalleryData|twisterData|altImages'))
             for script in script_tags:
                 if len(images) >= 7:
                     break
                 try:
                     script_text = script.string
-                    # Multiple patterns to try for high-quality images
+                    # Enhanced patterns to try for high-quality images
                     patterns = [
                         r'"hiRes":"(https://[^"]+)"',
                         r'"large":"(https://[^"]+)"',
                         r'"thumb":"(https://[^"]+)"',
-                        r'https://m\.media-amazon\.com/images/I/[^"]+\._[A-Z0-9_]+\.[a-z]+'
+                        r'https://m\.media-amazon\.com/images/I/[^"]+\._[A-Z0-9_]+\.[a-z]+',
+                        # NEW PATTERNS for additional image data structures:
+                        r'"imageGalleryData":\s*\[\s*{[^}]*"mainUrl":"([^"]+)"',
+                        r'"altImages":\s*\[\s*"([^"]+)"',
+                        r'"variant":"MAIN"[^}]*"url":"([^"]+)"',
+                        r'"landing":"(https://[^"]+)"'
                     ]
                     
                     for pattern in patterns:
                         matches = re.findall(pattern, script_text)
                         for img_url in matches:
-                            if img_url not in seen_urls and len(images) < 7:
+                            if img_url not in seen_urls and len(images) < 7 and is_valid_product_image(img_url):
                                 high_quality_url = re.sub(r'\._[A-Z0-9_]+\.', '._SL1500_.', img_url)
                                 images.append(high_quality_url)
                                 seen_urls.add(img_url)
@@ -253,14 +338,12 @@ def scrape_amazon(url):
                 if len(images) >= 7:
                     break
                 src = img.get('src', '')
-                if src and 'http' in src and 'images' in src and src not in seen_urls:
-                    # Filter out icons, sprites, etc.
-                    if not any(exclude in src.lower() for exclude in ['sprite', 'icon', 'logo', 'arrow', 'buy']):
-                        # Convert to highest quality
-                        high_quality_url = re.sub(r'\._[A-Z0-9_]+\.', '._SL1500_.', src)
-                        images.append(high_quality_url)
-                        seen_urls.add(src)
-                        print(f"📸 Found img tag: {high_quality_url[:80]}...", file=sys.stderr)
+                if src and src not in seen_urls and is_valid_product_image(src):
+                    # Convert to highest quality
+                    high_quality_url = re.sub(r'\._[A-Z0-9_]+\.', '._SL1500_.', src)
+                    images.append(high_quality_url)
+                    seen_urls.add(src)
+                    print(f"📸 Found img tag: {high_quality_url[:80]}...", file=sys.stderr)
         
         # Method 4: Image block container (additional fallback)
         if len(images) < 7:
@@ -271,11 +354,11 @@ def scrape_amazon(url):
                     if len(images) >= 7:
                         break
                     src = img.get("src", "")
-                    if src and src not in seen_urls and ("images-na.ssl-images-amazon.com" in src or "m.media-amazon.com" in src):
+                    if src and src not in seen_urls and is_valid_product_image(src):
                         high_quality_url = re.sub(r'\._[A-Z0-9_]+\.', '._SL1500_.', src)
                         images.append(high_quality_url)
                         seen_urls.add(src)
-                        print(f"� Found container image: {high_quality_url[:80]}...", file=sys.stderr)
+                        print(f"📦 Found container image: {high_quality_url[:80]}...", file=sys.stderr)
 
         # Extract ASIN from URL or page
         asin_match = re.search(r"/dp/([A-Z0-9]{10})", url)
@@ -293,6 +376,7 @@ def scrape_amazon(url):
 
         result = {
             "success": True,
+            "captcha_warning": captcha_detected,
             "title": title,
             "description": product_description,
             "bullets": bullets,
@@ -307,11 +391,17 @@ def scrape_amazon(url):
         print(f"📊 Found {len(product_details)} product details", file=sys.stderr)
         print(f"🏭 Found {len(manufacturing_details)} manufacturing details", file=sys.stderr)
         print(f"🖼️ Found {len(images)} product images", file=sys.stderr)
+        if captcha_detected:
+            print(f"⚠️ CAPTCHA was present but extraction continued", file=sys.stderr)
         return result
 
     except Exception as e:
-        print(f"❌ Error during scraping: {str(e)}", file=sys.stderr)
+        print(f"❌ Error during content extraction: {str(e)}", file=sys.stderr)
         return {"success": False, "error": str(e)}
+
+def scrape_amazon(url):
+    """Main scraping function with retry logic - max 2 retries"""
+    return scrape_amazon_with_retry(url, max_retries=2)
 
 def main():
     if len(sys.argv) < 2:

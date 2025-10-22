@@ -334,10 +334,31 @@ function formatDetailsAsArray(obj) {
 
 // Dual Scraper Integration - amz_scraper for images, scraper.py for other data
 app.post('/api/scrape-product', async (req, res) => {
-    const { url } = req.body;
+    let { url } = req.body;
     
     if (!url) {
         return res.status(400).json({ success: false, error: 'URL is required' });
+    }
+
+    // Fix URL if missing scheme
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        if (url.startsWith('www.') || url.startsWith('amazon.')) {
+            url = 'https://' + url;
+            console.log('🔧 Fixed URL scheme:', url);
+        } else {
+            // Assume it's an Amazon URL
+            url = 'https://' + url;
+            console.log('🔧 Added https:// to URL:', url);
+        }
+    }
+
+    // Validate URL is an Amazon URL
+    if (!url.includes('amazon.')) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Please provide a valid Amazon product URL',
+            userMessage: 'The URL must be from Amazon.in or Amazon.com'
+        });
     }
 
     console.log('🔍 Starting dual scraping for URL:', url);
@@ -398,42 +419,104 @@ app.post('/api/scrape-product', async (req, res) => {
             });
         });
 
-        // Wait for both scrapers to complete
-        const [scraperResult, amzScraperResult] = await Promise.all([scraperPromise, amzScraperPromise]);
+        // Wait for both scrapers to complete - use allSettled to handle partial failures
+        const [scraperResult, amzScraperResult] = await Promise.allSettled([scraperPromise, amzScraperPromise]);
 
-        console.log('✅ Both scrapers completed successfully');
+        console.log('📊 Scraping Results Summary:');
+        console.log('  scraper.py:', scraperResult.status === 'fulfilled' ? '✅ SUCCESS' : '❌ FAILED');
+        console.log('  amz_scraper.py:', amzScraperResult.status === 'fulfilled' ? '✅ SUCCESS' : '❌ FAILED');
 
-        // Merge results: scraper.py data + amz_scraper images
+        // Extract data from fulfilled promises
+        const scraperData = scraperResult.status === 'fulfilled' ? scraperResult.value : null;
+        const amzData = amzScraperResult.status === 'fulfilled' ? amzScraperResult.value : null;
+
+        // Log errors if any
+        if (scraperResult.status === 'rejected') {
+            console.error('  ❌ scraper.py error:', scraperResult.reason?.message || scraperResult.reason);
+        }
+        if (amzScraperResult.status === 'rejected') {
+            console.error('  ❌ amz_scraper.py error:', amzScraperResult.reason?.message || amzScraperResult.reason);
+        }
+
+        // Check if we got ANY data at all
+        if (!scraperData && !amzData) {
+            console.error('❌ Both scrapers failed completely');
+            
+            // Extract error messages from both scrapers
+            const scraperError = scraperResult.status === 'rejected' 
+                ? scraperResult.reason?.message || 'Unknown error'
+                : null;
+            const amzScraperError = amzScraperResult.status === 'rejected' 
+                ? amzScraperResult.reason?.message || 'Unknown error'
+                : null;
+            
+            // Return user-friendly error message
+            return res.json({
+                success: false,
+                error: 'Please try again. Unable to load product information from Amazon.',
+                userMessage: 'The product page could not be loaded. Please check the URL and try again in a few moments.',
+                technicalDetails: {
+                    scraperError: scraperError,
+                    amzScraperError: amzScraperError,
+                    timestamp: new Date().toISOString()
+                }
+            });
+        }
+
+        // Extract images with fallback - prefer amz_scraper, fallback to scraper.py
+        const images = (amzData?.product?.images?.length > 0 
+            ? amzData.product.images 
+            : scraperData?.images || []);
+
+        // Merge results with fallback logic
         const mergedResult = {
             success: true,
+            warnings: [],
             product: {
-                title: scraperResult.title || 'N/A',
-                description: scraperResult.description || 'N/A',
-                // asin: scraperResult.asin || amzScraperResult.product?.asin || 'N/A',
-                images: amzScraperResult.product?.images || []  // Images from amz_scraper
+                title: scraperData?.title || amzData?.product?.title || 'N/A',
+                description: scraperData?.description || amzData?.product?.description || 'N/A',
+                images: images
             },
             details: {
-                featureBullets: scraperResult.bullets || [],
-                productDetails: formatDetailsAsArray(scraperResult.productDetails),
-                manufacturingDetails: formatDetailsAsArray(scraperResult.manufacturingDetails),
-                additionalInfo: formatDetailsAsArray(scraperResult.additionalInfo)
+                featureBullets: scraperData?.bullets || [],
+                productDetails: formatDetailsAsArray(scraperData?.productDetails),
+                manufacturingDetails: formatDetailsAsArray(scraperData?.manufacturingDetails),
+                additionalInfo: formatDetailsAsArray(scraperData?.additionalInfo)
             },
             raw: {
-                productDetails: scraperResult.productDetails,
-                manufacturingDetails: scraperResult.manufacturingDetails,
-                additionalInfo: scraperResult.additionalInfo
+                productDetails: scraperData?.productDetails || {},
+                manufacturingDetails: scraperData?.manufacturingDetails || {},
+                additionalInfo: scraperData?.additionalInfo || {}
             }
         };
 
-        console.log('📦 Merged result:', JSON.stringify(mergedResult, null, 2));
+        // Add warnings if scrapers failed
+        if (scraperResult.status === 'rejected') {
+            mergedResult.warnings.push('Text scraper failed - data may be incomplete');
+        }
+        if (amzScraperResult.status === 'rejected') {
+            mergedResult.warnings.push('Image scraper failed - using fallback images');
+        }
+
+        // Log summary
+        console.log('✅ Scraping completed with merged data:');
+        console.log('  Title:', mergedResult.product.title !== 'N/A' ? '✅' : '❌');
+        console.log('  Images:', images.length, 'found');
+        console.log('  Product Details:', Object.keys(scraperData?.productDetails || {}).length, 'fields');
+        console.log('  Warnings:', mergedResult.warnings.length);
+        
         res.json(mergedResult);
 
     } catch (error) {
         console.error('❌ Scraping error:', error.message);
         res.json({
             success: false,
-            error: error.message,
-            message: 'Server error during scraping'
+            error: 'Please try again. Unable to process the product page.',
+            userMessage: 'An unexpected error occurred while loading the product. Please try again.',
+            technicalDetails: {
+                message: error.message,
+                timestamp: new Date().toISOString()
+            }
         });
     }
 });

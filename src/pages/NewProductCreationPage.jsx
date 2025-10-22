@@ -1,9 +1,10 @@
 // Page 4b: New Product Creation Page with Form and Gold Standard Reference
 
-import { useState, useEffect } from 'react';
-import { Star, Save, Plus, Check } from 'lucide-react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { Star, Save, Plus, Check, Wand2, Edit2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { goldStandardProduct } from '../data/mockData.js';
+import { generateProductTitle, generateProductDescription } from '../api/api.js';
 
 const NewProductCreationPage = () => {
   const navigate = useNavigate();
@@ -13,9 +14,15 @@ const NewProductCreationPage = () => {
 
   // Product Title State
   const [productTitle, setProductTitle] = useState('');
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [acceptedTitle, setAcceptedTitle] = useState('');
+  const titleTextareaRef = useRef(null);
   
   // Product Description State
   const [productDescription, setProductDescription] = useState('');
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [acceptedDescription, setAcceptedDescription] = useState('');
+  const descTextareaRef = useRef(null);
   
   // Product Attributes State - will be dynamically initialized
   const [productAttributes, setProductAttributes] = useState({});
@@ -24,6 +31,10 @@ const NewProductCreationPage = () => {
   const [newAttributeKey, setNewAttributeKey] = useState('');
   const [newAttributeValue, setNewAttributeValue] = useState('');
   const [selectedAttributeType, setSelectedAttributeType] = useState('');
+
+  // Loading states for AI generation
+  const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
+  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
 
   // Predefined attribute options
   const predefinedAttributes = [
@@ -124,14 +135,164 @@ const NewProductCreationPage = () => {
   };
 
   const handleSaveDraft = () => {
-    const formData = {
-      title: productTitle,
-      description: productDescription,
-      ...productAttributes
+    // Build product object similar to existingProduct structure
+    const newProductData = {
+      id: 'NEW-' + Date.now(), // Generate unique ID
+      asin: 'NEW-' + Date.now(),
+      title: acceptedTitle,
+      brand: null,
+      amazonUrl: null, // No URL for new products
+      
+      // Images - empty for now (will be generated)
+      images: [],
+      
+      // Features/Bullets - use description as a feature
+      features: acceptedDescription ? [acceptedDescription] : [],
+      
+      // Description
+      description: acceptedDescription,
+      
+      // Convert attributes to array format matching existing product structure
+      productDetailsArray: Object.entries(productAttributes).map(([key, value]) => ({
+        label: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim(),
+        key: key,
+        value: value || 'N/A'
+      })),
+      
+      manufacturingDetailsArray: [],
+      additionalInfoArray: [],
+      
+      // Mark as new product
+      isNewProduct: true
     };
-    console.log('Saving draft:', formData);
-    // Pass state to indicate coming from new product page
+    
+    console.log('💾 Saving new product data:', newProductData);
+    
+    // Save to SAME localStorage key as existing product
+    localStorage.setItem('existingProduct', JSON.stringify(newProductData));
+    console.log('✅ Stored new product in existingProduct localStorage');
+    
+    // Navigate with isNewProduct flag to show 2-column layout
     navigate('/compare-images', { state: { isNewProduct: true } });
+  };
+
+  // Auto-resize textareas
+  useLayoutEffect(() => {
+    if (titleTextareaRef.current) {
+      titleTextareaRef.current.style.height = 'auto';
+      titleTextareaRef.current.style.height = titleTextareaRef.current.scrollHeight + 'px';
+    }
+  }, [productTitle]);
+
+  useLayoutEffect(() => {
+    if (descTextareaRef.current) {
+      descTextareaRef.current.style.height = 'auto';
+      descTextareaRef.current.style.height = descTextareaRef.current.scrollHeight + 'px';
+    }
+  }, [productDescription]);
+
+  // Title Handlers
+  const handleAcceptTitle = () => {
+    setAcceptedTitle(productTitle);
+    setIsEditingTitle(false);
+  };
+
+  const handleCancelTitle = () => {
+    setProductTitle(acceptedTitle);
+    setIsEditingTitle(false);
+  };
+
+  const handleAIGenerateTitle = async () => {
+    setIsGeneratingTitle(true);
+    try {
+      const subcategory = 'Product'; // You can make this dynamic
+      
+      // Clean product attributes before sending - create readable labels
+      const cleanedProductDetails = {};
+      Object.entries(productAttributes).forEach(([key, value]) => {
+        if (value && value.trim()) {
+          // Convert camelCase or lowercase keys to readable labels
+          const readableKey = key
+            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+            .replace(/([a-z])([A-Z])/g, '$1 $2') // Add space between lower and upper
+            .trim()
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+          
+          cleanedProductDetails[readableKey] = value.trim();
+        }
+      });
+
+      if (Object.keys(cleanedProductDetails).length === 0) {
+        alert('Please fill in some product attributes before generating AI title.');
+        setIsGeneratingTitle(false);
+        return;
+      }
+
+      console.log('🎯 Sending to AI (Title):', cleanedProductDetails);
+
+      const generatedTitle = await generateProductTitle(subcategory, cleanedProductDetails);
+      setProductTitle(generatedTitle);
+      setIsEditingTitle(true);
+    } catch (error) {
+      console.error('Error generating title:', error);
+      alert(`Failed to generate title: ${error.message}`);
+    } finally {
+      setIsGeneratingTitle(false);
+    }
+  };
+
+  // Description Handlers
+  const handleAcceptDescription = () => {
+    setAcceptedDescription(productDescription);
+    setIsEditingDescription(false);
+  };
+
+  const handleCancelDescription = () => {
+    setProductDescription(acceptedDescription);
+    setIsEditingDescription(false);
+  };
+
+  const handleAIGenerateDescription = async () => {
+    setIsGeneratingDescription(true);
+    try {
+      const subcategory = 'Product'; // You can make this dynamic
+      
+      // Clean product attributes before sending - create readable labels
+      const cleanedProductDetails = {};
+      Object.entries(productAttributes).forEach(([key, value]) => {
+        if (value && value.trim()) {
+          // Convert camelCase or lowercase keys to readable labels
+          const readableKey = key
+            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+            .replace(/([a-z])([A-Z])/g, '$1 $2') // Add space between lower and upper
+            .trim()
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+          
+          cleanedProductDetails[readableKey] = value.trim();
+        }
+      });
+
+      if (Object.keys(cleanedProductDetails).length === 0) {
+        alert('Please fill in some product attributes before generating AI description.');
+        setIsGeneratingDescription(false);
+        return;
+      }
+
+      console.log('🎯 Sending to AI (Description):', cleanedProductDetails);
+
+      const generatedDescription = await generateProductDescription(subcategory, cleanedProductDetails);
+      setProductDescription(generatedDescription);
+      setIsEditingDescription(true);
+    } catch (error) {
+      console.error('Error generating description:', error);
+      alert(`Failed to generate description: ${error.message}`);
+    } finally {
+      setIsGeneratingDescription(false);
+    }
   };
 
   const calculateProgress = () => {
@@ -246,322 +407,185 @@ const NewProductCreationPage = () => {
             </div>
           </div>
 
-          {/* Product Title Section */}
-          <div className="mb-8">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
-              <h3 className="text-lg font-semibold text-gray-700">Product Title</h3>
-              <h3 className="text-lg font-semibold text-gray-700">Product Title</h3>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left: Gold Standard Product Title */}
-              <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-lg p-4 h-full flex items-center">
-                <div className="bg-white/60 rounded-md p-3 border border-yellow-200 w-full">
-                  <p className="text-gray-800 text-sm leading-relaxed">
-                    {goldenProduct.title}
-                  </p>
-                </div>
-              </div>
-
-              {/* Right: Your Product Title Input */}
-              <div className="h-full flex items-start">
-                <textarea
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                  value={productTitle}
-                  onChange={e => setProductTitle(e.target.value)}
-                  rows={3}
-                  placeholder="Enter your product title..."
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Product Description Section */}
-          <div className="mb-8">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
-              <h3 className="text-lg font-semibold text-gray-700">Product Description</h3>
-              <h3 className="text-lg font-semibold text-gray-700">Product Description</h3>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left: Gold Standard Description */}
-              <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-lg p-4 h-full flex items-center">
-                <div className="bg-white/60 rounded-md p-3 border border-yellow-200 w-full">
-                  <p className="text-gray-800 text-sm leading-relaxed">
-                    {getDescription()}
-                  </p>
-                </div>
-              </div>
-
-              {/* Right: Your Product Description Input */}
-              <div className="h-full flex items-start">
-                <textarea
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                  value={productDescription}
-                  onChange={e => setProductDescription(e.target.value)}
-                  rows={4}
-                  placeholder="Enter your product description..."
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Product Attributes Section */}
+          {/* Product Attributes Section - MOVED TO TOP */}
           <div className="mb-8">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
               <h3 className="text-lg font-semibold text-gray-700">Product Attributes</h3>
               <h3 className="text-lg font-semibold text-gray-700">Product Attributes</h3>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left: Gold Standard Attributes */}
-              <div className="space-y-3">
-                {/* Handle both mockData format (details object) and scraped format (arrays) */}
-                {goldenProduct.details ? (
-                  // MockData format with details object
-                  Object.entries(goldenProduct.details).map(([key, value], index) => (
-                    <div key={index} className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-lg p-3">
-                      <div className="flex items-center gap-3">
-                        <div className="text-xs font-semibold text-gray-600 min-w-[80px] capitalize">
+            <div className="space-y-3">
+              {goldenProduct.details ? (
+                // MockData format - side by side display
+                <>
+                  {Object.entries(productAttributes).map(([key, value]) => (
+                    <div key={key} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Left: Gold Standard Attribute */}
+                      <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-lg p-3">
+                        <div className="text-xs font-semibold text-gray-600 mb-2 capitalize">
                           {key.replace(/([A-Z])/g, ' $1').trim()}
                         </div>
-                        <p className="text-sm font-medium text-gray-800">{value}</p>
+                        <p className="text-sm font-medium text-gray-800">
+                          {goldenProduct.details[key]}
+                        </p>
+                      </div>
+
+                      {/* Right: Your Product Attribute Input */}
+                      <div className="bg-white border border-gray-200 rounded-lg p-3">
+                        <div className="text-xs font-semibold text-gray-600 mb-2 capitalize">
+                          {key.replace(/([A-Z])/g, ' $1').trim()}
+                        </div>
+                        <input
+                          type="text"
+                          className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={value}
+                          onChange={e => handleAttributeChange(key, e.target.value)}
+                          placeholder={`Enter ${key.replace(/([A-Z])/g, ' $1').trim().toLowerCase()}...`}
+                        />
                       </div>
                     </div>
-                  ))
-                ) : (
-                  // Scraped format with multiple arrays
-                  <>
-                    {/* Product Details Section */}
-                    {goldenProduct.productDetailsArray && Array.isArray(goldenProduct.productDetailsArray) && goldenProduct.productDetailsArray.length > 0 && (
-                      <>
-                        {/* <div className="bg-blue-100 border border-blue-300 rounded-lg p-2">
-                          <h4 className="text-xs font-bold text-blue-900 uppercase">Product Details</h4>
-                        </div> */}
-                        {goldenProduct.productDetailsArray.map((item, index) => (
-                          <div key={`pd-${index}`} className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-lg p-3">
-                            <div className="flex items-center gap-3">
-                              <div className="text-xs font-semibold text-gray-600 min-w-[120px]">
-                                {item.label || item.key || 'Attribute'}
-                              </div>
-                              <p className="text-sm font-medium text-gray-800">{item.value || 'N/A'}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                    
-                    {/* Manufacturing Details Section */}
-                    {goldenProduct.manufacturingDetailsArray && Array.isArray(goldenProduct.manufacturingDetailsArray) && goldenProduct.manufacturingDetailsArray.length > 0 && (
-                      <>
-                        {/* <div className="bg-green-100 border border-green-300 rounded-lg p-2 mt-2">
-                          <h4 className="text-xs font-bold text-green-900 uppercase">Manufacturing Details</h4>
-                        </div> */}
-                        {goldenProduct.manufacturingDetailsArray.map((item, index) => (
-                          <div key={`md-${index}`} className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-lg p-3">
-                            <div className="flex items-center gap-3">
-                              <div className="text-xs font-semibold text-gray-600 min-w-[120px]">
-                                {item.label || item.key || 'Attribute'}
-                              </div>
-                              <p className="text-sm font-medium text-gray-800">{item.value || 'N/A'}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                    
-                    {/* Additional Info Section */}
-                    {goldenProduct.additionalInfoArray && Array.isArray(goldenProduct.additionalInfoArray) && goldenProduct.additionalInfoArray.length > 0 && (
-                      <>
-                        <div className="bg-purple-100 border border-purple-300 rounded-lg p-2 mt-2">
-                          <h4 className="text-xs font-bold text-purple-900 uppercase">Additional Information</h4>
-                        </div>
-                        {goldenProduct.additionalInfoArray.map((item, index) => (
-                          <div key={`ai-${index}`} className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-lg p-3">
-                            <div className="flex items-center gap-3">
-                              <div className="text-xs font-semibold text-gray-600 min-w-[120px]">
-                                {item.label || item.key || 'Attribute'}
-                              </div>
-                              <p className="text-sm font-medium text-gray-800">{item.value || 'N/A'}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                    
-                    {/* No attributes available */}
-                    {(!goldenProduct.productDetailsArray || goldenProduct.productDetailsArray.length === 0) &&
-                     (!goldenProduct.manufacturingDetailsArray || goldenProduct.manufacturingDetailsArray.length === 0) &&
-                     (!goldenProduct.additionalInfoArray || goldenProduct.additionalInfoArray.length === 0) && (
-                      <div className="bg-gray-50 border border-gray-300 rounded-lg p-4">
-                        <p className="text-sm text-gray-500 text-center">No product attributes available</p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
+                  ))}
+                </>
+              ) : (
+                // Scraped format with multiple arrays - side by side display
+                <>
+                  {(() => {
+                    const allAttributes = [];
+                    const seenKeys = new Set();
+                    const normalizeKey = (key) => {
+                      if (!key) return '';
+                      return key.trim()
+                        .replace(/[\n\r\s:‏‎]+/g, '')
+                        .toLowerCase();
+                    };
 
-              {/* Right: Your Product Attributes Input */}
-              <div className="space-y-3">
-                {goldenProduct.details ? (
-                  // MockData format - simple list of inputs
-                  <>
-                    {Object.entries(productAttributes).map(([key, value]) => (
-                      <div key={key} className="bg-white border border-gray-200 rounded-lg p-3">
-                        <div className="flex items-center gap-3">
-                          <div className="text-xs font-semibold text-gray-600 min-w-[80px] capitalize">
-                            {key.replace(/([A-Z])/g, ' $1').trim()}
+                    // Collect all attributes from all sections with deduplication
+                    if (goldenProduct.productDetailsArray && goldenProduct.productDetailsArray.length > 0) {
+                      goldenProduct.productDetailsArray.forEach((item) => {
+                        const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+                        const normalizedKey = normalizeKey(item.label || item.key || '');
+                        if (!seenKeys.has(normalizedKey)) {
+                          seenKeys.add(normalizedKey);
+                          allAttributes.push({ ...item, inputKey: key });
+                        }
+                      });
+                    }
+                    
+                    if (goldenProduct.manufacturingDetailsArray && goldenProduct.manufacturingDetailsArray.length > 0) {
+                      goldenProduct.manufacturingDetailsArray.forEach((item) => {
+                        const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+                        const normalizedKey = normalizeKey(item.label || item.key || '');
+                        if (!seenKeys.has(normalizedKey)) {
+                          seenKeys.add(normalizedKey);
+                          allAttributes.push({ ...item, inputKey: key });
+                        }
+                      });
+                    }
+                    
+                    if (goldenProduct.additionalInfoArray && goldenProduct.additionalInfoArray.length > 0) {
+                      goldenProduct.additionalInfoArray.forEach((item) => {
+                        const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+                        const normalizedKey = normalizeKey(item.label || item.key || '');
+                        if (!seenKeys.has(normalizedKey)) {
+                          seenKeys.add(normalizedKey);
+                          allAttributes.push({ ...item, inputKey: key });
+                        }
+                      });
+                    }
+
+                    // Render deduplicated attributes side by side
+                    return allAttributes.map((item, index) => (
+                      <div key={`attr-${index}`} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Left: Gold Standard Attribute */}
+                        <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-lg p-3">
+                          <div className="text-xs font-semibold text-gray-600 mb-2">
+                            {item.label || item.key || 'Attribute'}
+                          </div>
+                          <p className="text-sm font-medium text-gray-800">{item.value || 'N/A'}</p>
+                        </div>
+
+                        {/* Right: Your Product Attribute Input */}
+                        <div className="bg-white border border-gray-200 rounded-lg p-3">
+                          <div className="text-xs font-semibold text-gray-600 mb-2">
+                            {item.label || item.key || 'Attribute'}
                           </div>
                           <input
                             type="text"
-                            className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            value={value}
-                            onChange={e => handleAttributeChange(key, e.target.value)}
-                            placeholder={`Enter ${key.replace(/([A-Z])/g, ' $1').trim().toLowerCase()}...`}
+                            className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            value={productAttributes[item.inputKey] || ''}
+                            onChange={e => handleAttributeChange(item.inputKey, e.target.value)}
+                            placeholder={`Enter ${item.label?.toLowerCase() || 'value'}...`}
                           />
                         </div>
                       </div>
-                    ))}
-                  </>
-                ) : (
-                  // Scraped format - organized by sections
-                  <>
-                    {/* Product Details Section */}
-                    {goldenProduct.productDetailsArray && goldenProduct.productDetailsArray.length > 0 && (
-                      <>
-                        {/* <div className="bg-blue-100 border border-blue-300 rounded-lg p-2">
-                          <h4 className="text-xs font-bold text-blue-900 uppercase">Product Details</h4>
-                        </div> */}
-                        {goldenProduct.productDetailsArray.map((item, index) => {
-                          const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-                          return (
-                            <div key={`pd-input-${index}`} className="bg-white border border-gray-200 rounded-lg p-3">
-                              <div className="flex items-center gap-3">
-                                <div className="text-xs font-semibold text-gray-600 min-w-[120px]">
-                                  {item.label || item.key || 'Attribute'}
-                                </div>
-                                <input
-                                  type="text"
-                                  className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                  value={productAttributes[key] || ''}
-                                  onChange={e => handleAttributeChange(key, e.target.value)}
-                                  placeholder={`Enter ${item.label?.toLowerCase() || 'value'}...`}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
+                    ));
+                  })()}
+                  
+                  {/* Custom Added Attributes Section */}
+                  {(() => {
+                    // Get all keys from golden product
+                    const goldenKeys = new Set();
                     
-                    {/* Manufacturing Details Section */}
-                    {goldenProduct.manufacturingDetailsArray && goldenProduct.manufacturingDetailsArray.length > 0 && (
-                      <>
-                        {/* <div className="bg-green-100 border border-green-300 rounded-lg p-2 mt-2">
-                          <h4 className="text-xs font-bold text-green-900 uppercase">Manufacturing Details</h4>
-                        </div> */}
-                        {goldenProduct.manufacturingDetailsArray.map((item, index) => {
-                          const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-                          return (
-                            <div key={`md-input-${index}`} className="bg-white border border-gray-200 rounded-lg p-3">
-                              <div className="flex items-center gap-3">
-                                <div className="text-xs font-semibold text-gray-600 min-w-[120px]">
-                                  {item.label || item.key || 'Attribute'}
-                                </div>
-                                <input
-                                  type="text"
-                                  className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                  value={productAttributes[key] || ''}
-                                  onChange={e => handleAttributeChange(key, e.target.value)}
-                                  placeholder={`Enter ${item.label?.toLowerCase() || 'value'}...`}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
+                    if (goldenProduct.productDetailsArray) {
+                      goldenProduct.productDetailsArray.forEach(item => {
+                        const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+                        if (key) goldenKeys.add(key);
+                      });
+                    }
                     
-                    {/* Additional Info Section */}
-                    {goldenProduct.additionalInfoArray && goldenProduct.additionalInfoArray.length > 0 && (
-                      <>
-                        <div className="bg-purple-100 border border-purple-300 rounded-lg p-2 mt-2">
-                          <h4 className="text-xs font-bold text-purple-900 uppercase">Additional Information</h4>
-                        </div>
-                        {goldenProduct.additionalInfoArray.map((item, index) => {
-                          const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-                          return (
-                            <div key={`ai-input-${index}`} className="bg-white border border-gray-200 rounded-lg p-3">
-                              <div className="flex items-center gap-3">
-                                <div className="text-xs font-semibold text-gray-600 min-w-[120px]">
-                                  {item.label || item.key || 'Attribute'}
-                                </div>
-                                <input
-                                  type="text"
-                                  className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                  value={productAttributes[key] || ''}
-                                  onChange={e => handleAttributeChange(key, e.target.value)}
-                                  placeholder={`Enter ${item.label?.toLowerCase() || 'value'}...`}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
+                    if (goldenProduct.manufacturingDetailsArray) {
+                      goldenProduct.manufacturingDetailsArray.forEach(item => {
+                        const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+                        if (key) goldenKeys.add(key);
+                      });
+                    }
                     
-                    {/* Custom Added Attributes Section */}
-                    {(() => {
-                      // Get all keys from golden product
-                      const goldenKeys = new Set();
-                      
-                      if (goldenProduct.productDetailsArray) {
-                        goldenProduct.productDetailsArray.forEach(item => {
-                          const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-                          if (key) goldenKeys.add(key);
-                        });
-                      }
-                      
-                      if (goldenProduct.manufacturingDetailsArray) {
-                        goldenProduct.manufacturingDetailsArray.forEach(item => {
-                          const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-                          if (key) goldenKeys.add(key);
-                        });
-                      }
-                      
-                      if (goldenProduct.additionalInfoArray) {
-                        goldenProduct.additionalInfoArray.forEach(item => {
-                          const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-                          if (key) goldenKeys.add(key);
-                        });
-                      }
-                      
-                      // Find custom attributes (not in golden product)
-                      const customAttributes = Object.entries(productAttributes).filter(([key]) => !goldenKeys.has(key));
-                      
-                      return customAttributes.length > 0 && (
-                        <>
-                          {customAttributes.map(([key, value]) => (
-                            <div key={`custom-${key}`} className="bg-white border border-gray-200 rounded-lg p-3">
-                              <div className="flex items-center gap-3">
-                                <div className="text-xs font-semibold text-gray-600 min-w-[120px] capitalize">
-                                  {key.replace(/([A-Z])/g, ' $1').trim()}
-                                </div>
-                                <input
-                                  type="text"
-                                  className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                  value={value}
-                                  onChange={e => handleAttributeChange(key, e.target.value)}
-                                  placeholder={`Enter ${key.replace(/([A-Z])/g, ' $1').trim().toLowerCase()}...`}
-                                />
+                    if (goldenProduct.additionalInfoArray) {
+                      goldenProduct.additionalInfoArray.forEach(item => {
+                        const key = item.label?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+                        if (key) goldenKeys.add(key);
+                      });
+                    }
+                    
+                    // Find custom attributes (not in golden product)
+                    const customAttributes = Object.entries(productAttributes).filter(([key]) => !goldenKeys.has(key));
+                    
+                    return customAttributes.length > 0 && (
+                      <>
+                        {customAttributes.map(([key, value]) => (
+                          <div key={`custom-${key}`} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Left: Empty placeholder */}
+                            <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
+                              <div className="text-xs font-semibold text-gray-600 mb-2 capitalize">
+                                {key.replace(/([A-Z])/g, ' $1').trim()}
                               </div>
+                              <p className="text-sm text-gray-400 italic">Custom attribute</p>
                             </div>
-                          ))}
-                        </>
-                      );
-                    })()}
-                  </>
-                )}
-                
-                {/* Add Attribute Button/Form */}
-                {showAddAttribute ? (
+                            
+                            {/* Right: Custom Attribute Input */}
+                            <div className="bg-white border border-gray-200 rounded-lg p-3">
+                              <div className="text-xs font-semibold text-gray-600 mb-2 capitalize">
+                                {key.replace(/([A-Z])/g, ' $1').trim()}
+                              </div>
+                              <input
+                                type="text"
+                                className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                value={value}
+                                onChange={e => handleAttributeChange(key, e.target.value)}
+                                placeholder={`Enter ${key.replace(/([A-Z])/g, ' $1').trim().toLowerCase()}...`}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()}
+                </>
+              )}
+              
+              {/* Add Attribute Button/Form */}
+              {showAddAttribute ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div></div>
                   <div className="bg-blue-50 border border-blue-300 rounded-lg p-3">
                     <div className="space-y-2">
                       {/* Dropdown for attribute selection */}
@@ -626,14 +650,161 @@ const NewProductCreationPage = () => {
                       </div>
                     </div>
                   </div>
-                ) : (
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div></div>
                   <button
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm w-full justify-center"
+                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm justify-center"
                     onClick={() => setShowAddAttribute(true)}
                   >
                     <Plus className="h-4 w-4" />
                     <span>Add New Attribute</span>
                   </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Product Title Section - MOVED BELOW ATTRIBUTES */}
+          <div className="mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
+              <h3 className="text-lg font-semibold text-gray-700">Product Title</h3>
+              <h3 className="text-lg font-semibold text-gray-700">Product Title</h3>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left: Gold Standard Product Title */}
+              <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-lg p-4 h-full flex items-center">
+                <div className="bg-white/60 rounded-md p-3 border border-yellow-200 w-full">
+                  <p className="text-gray-800 text-sm leading-relaxed">
+                    {goldenProduct.title}
+                  </p>
+                </div>
+              </div>
+
+              {/* Right: Your Product Title Input with AI Generation */}
+              <div className="h-full flex flex-col">
+                {isEditingTitle ? (
+                  <div className="space-y-3">
+                    <textarea
+                      ref={titleTextareaRef}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                      value={productTitle}
+                      onChange={e => setProductTitle(e.target.value)}
+                      rows={3}
+                      placeholder="Enter your product title..."
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        className="flex items-center space-x-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
+                        onClick={handleAcceptTitle}
+                      >
+                        <Check className="h-4 w-4" />
+                        <span>Accept</span>
+                      </button>
+                      <button
+                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors text-sm"
+                        onClick={handleCancelTitle}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-gray-50 min-h-[60px]">
+                      {acceptedTitle || <span className="text-gray-400 italic">No title yet</span>}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="flex items-center space-x-1 px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={handleAIGenerateTitle}
+                        disabled={isGeneratingTitle}
+                      >
+                        <Wand2 className={`h-4 w-4 ${isGeneratingTitle ? 'animate-spin' : ''}`} />
+                        <span>{isGeneratingTitle ? 'Generating...' : 'AI Generate'}</span>
+                      </button>
+                      <button
+                        className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+                        onClick={() => setIsEditingTitle(true)}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                        <span>Edit</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Product Description Section */}
+          <div className="mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
+              <h3 className="text-lg font-semibold text-gray-700">Product Description</h3>
+              <h3 className="text-lg font-semibold text-gray-700">Product Description</h3>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left: Gold Standard Description */}
+              <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-lg p-4 h-full flex items-center">
+                <div className="bg-white/60 rounded-md p-3 border border-yellow-200 w-full">
+                  <p className="text-gray-800 text-sm leading-relaxed">
+                    {getDescription()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Right: Your Product Description Input with AI Generation */}
+              <div className="h-full flex flex-col">
+                {isEditingDescription ? (
+                  <div className="space-y-3">
+                    <textarea
+                      ref={descTextareaRef}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                      value={productDescription}
+                      onChange={e => setProductDescription(e.target.value)}
+                      rows={4}
+                      placeholder="Enter your product description..."
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        className="flex items-center space-x-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
+                        onClick={handleAcceptDescription}
+                      >
+                        <Check className="h-4 w-4" />
+                        <span>Accept</span>
+                      </button>
+                      <button
+                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors text-sm"
+                        onClick={handleCancelDescription}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-gray-50 min-h-[80px]">
+                      {acceptedDescription || <span className="text-gray-400 italic">No description yet</span>}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="flex items-center space-x-1 px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={handleAIGenerateDescription}
+                        disabled={isGeneratingDescription}
+                      >
+                        <Wand2 className={`h-4 w-4 ${isGeneratingDescription ? 'animate-spin' : ''}`} />
+                        <span>{isGeneratingDescription ? 'Generating...' : 'AI Generate'}</span>
+                      </button>
+                      <button
+                        className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+                        onClick={() => setIsEditingDescription(true)}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                        <span>Edit</span>
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

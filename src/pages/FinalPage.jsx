@@ -11,6 +11,7 @@ const FinalPage = () => {
   const [activeTab, setActiveTab] = useState('original');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [allImages, setAllImages] = useState([]);
+  const [isExporting, setIsExporting] = useState(false);
   const contentRef = useRef(null);
   const navigate = useNavigate();
 
@@ -27,21 +28,18 @@ const FinalPage = () => {
     html2pdf().set(opt).from(element).save();
   };
 
-  const handleProceedAndExportCSV = async () => {
+  const handleProceedAndExportToSheets = async () => {
     if (!comparisonData) {
       alert('No data available to export');
       return;
     }
 
-    // Helper function to safely extract value and escape CSV special characters
-    const csvEscape = (value) => {
+    setIsExporting(true);
+
+    // Helper function to safely extract value
+    const safeValue = (value) => {
       if (value === null || value === undefined) return 'N/A';
-      const str = String(value);
-      // Escape double quotes and wrap in quotes if contains comma, newline, or quote
-      if (str.includes(',') || str.includes('\n') || str.includes('"')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
+      return String(value);
     };
 
     // Helper to find value in productDetails or manufacturingDetails
@@ -88,9 +86,16 @@ const FinalPage = () => {
       return 'N/A';
     };
 
+    // Get current date in day, month, year format
+    const currentDate = new Date();
+    const day = currentDate.getDate();
+    const month = currentDate.getMonth() + 1; // Months are 0-indexed
+    const year = currentDate.getFullYear();
+    const formattedDate = `${day}/${month}/${year}`;
+
     // Map frontend data to Amazon template columns
     const columnHeaders = [
-      'Number_of_attributes_with_errors', 'Number_of_attributes_with_other_suggestions', 'Product_Sub_type',
+      'Date', 'Number_of_attributes_with_errors', 'Number_of_attributes_with_other_suggestions', 'Product_Sub_type',
       'Seller_SKU', 'Brand_Name', 'Update_Delete', 'Manufacturer_Part_Number', 'Product_ID', 'Product_ID_Type',
       'Item_Name', 'Product_Description', 'Manufacturer', 'Recommended_Browse_Nodes', 'Closure_Type',
       'Model_Name', 'Model_Number', 'Product_Care_Instructions', 'Your_price', 'Quantity',
@@ -155,27 +160,28 @@ const FinalPage = () => {
 
     // Map data values to columns
     const dataRow = [
+      formattedDate, // Date
       'N/A', // Number_of_attributes_with_errors
       'N/A', // Number_of_attributes_with_other_suggestions
-      comparisonData.subcategory || 'N/A', // Product_Sub_type
-      comparisonData.originalAsin || 'N/A', // Seller_SKU
-      comparisonData.brandComparison?.original || 'N/A', // Brand_Name
+      safeValue(comparisonData.subcategory), // Product_Sub_type
+      safeValue(comparisonData.originalAsin), // Seller_SKU
+      safeValue(comparisonData.brandComparison?.original), // Brand_Name
       'Update', // Update_Delete
       findDetailValue('part number'), // Manufacturer_Part_Number
-      comparisonData.originalAsin || 'N/A', // Product_ID
+      safeValue(comparisonData.originalAsin), // Product_ID
       'ASIN', // Product_ID_Type
-      comparisonData.originalTitle || 'N/A', // Item_Name
-      comparisonData.description || comparisonData.notes || 'N/A', // Product_Description
+      safeValue(comparisonData.originalTitle), // Item_Name
+      safeValue(comparisonData.description || comparisonData.notes), // Product_Description
       findDetailValue('manufacturer'), // Manufacturer
       'N/A', // Recommended_Browse_Nodes
       findDetailValue('closure'), // Closure_Type
       findDetailValue('model name'), // Model_Name
       findDetailValue('model number'), // Model_Number
       findDetailValue('care instructions'), // Product_Care_Instructions
-      comparisonData.originalPrice || 'N/A', // Your_price
+      safeValue(comparisonData.originalPrice), // Your_price
       '1', // Quantity
       'N/A', // Apparel_Size_Body_Type
-      findDetailValue('gender') || comparisonData.department || 'N/A', // Target_Gender
+      safeValue(findDetailValue('gender') || comparisonData.department), // Target_Gender
       findDetailValue('age range'), // Age_Range_Description
       'N/A', // Apparel_Size_System
       'N/A', // Apparel_Size_Class
@@ -200,7 +206,7 @@ const FinalPage = () => {
       getBulletPoint(2), // Bullet_Point3
       getBulletPoint(3), // Bullet_Point4
       getBulletPoint(4), // Bullet_Point5
-      comparisonData.category || 'N/A', // Generic_Keyword
+      safeValue(comparisonData.category), // Generic_Keyword
       findDetailValue('style'), // Style
       findDetailValue('packer'), // Packer_Contact_Information
       getSpecialFeature(0), // Special_Features1
@@ -209,7 +215,7 @@ const FinalPage = () => {
       getSpecialFeature(3), // Special_Features4
       getSpecialFeature(4), // Special_Features5
       findDetailValue('design'), // Design
-      comparisonData.department || 'N/A', // Item_Type_Name
+      safeValue(comparisonData.department), // Item_Type_Name
       findDetailValue('occasion'), // Occasion1
       'N/A', // Occasion2
       'N/A', // Occasion3
@@ -238,7 +244,7 @@ const FinalPage = () => {
       findDetailValue('weave'), // Weave_Type
       'N/A', // Back_Style
       findDetailValue('theme'), // Theme
-      findDetailValue('gender') || comparisonData.department || 'N/A', // Gender
+      safeValue(findDetailValue('gender') || comparisonData.department), // Gender
       'N/A', // League_Name
       'N/A', // Special_Sizes
       'N/A', // Embroidery_Type
@@ -317,12 +323,12 @@ const FinalPage = () => {
       'N/A', // Can_Be_Gift_Messaged
       'N/A', // Is_Gift_Wrap_Available
       'N/A', // Minimum_Advertised_Price
-      comparisonData.originalPrice || 'N/A', // List_Price
+      safeValue(comparisonData.originalPrice), // List_Price
       'INR', // Currency
       'N/A', // Offer_End_Date
       'N/A', // Shipping_Template
       'N/A', // Offer_Start_Date
-      comparisonData.originalPrice || 'N/A', // Maximum_Retail_Price
+      safeValue(comparisonData.originalPrice), // Maximum_Retail_Price
       'N/A', // Business_Price
       'N/A', // Quantity_Price_Type
       'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', // Quantity_Price/Bound 1-5
@@ -331,33 +337,11 @@ const FinalPage = () => {
       'N/A'  // National_Stock_Number
     ];
 
-    // Create CSV with headers as first row and data as second row
-    const csvRows = [];
-    csvRows.push(columnHeaders.map(header => csvEscape(header)).join(','));
-    csvRows.push(dataRow.map(value => csvEscape(value)).join(','));
-    
-    const csvContent = csvRows.join('\n');
-    
-    // Create and download CSV file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `amazon-product-${comparisonData.originalAsin || 'data'}-${Date.now()}.csv`);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    console.log('✅ CSV file downloaded');
-    
     // Upload to Google Sheets
     try {
       console.log('📤 Uploading to Google Sheets...');
       
-      // Prepare data for Google Sheets API (array of arrays, not CSV string)
+      // Prepare data for Google Sheets API (array of arrays)
       const sheetData = [
         columnHeaders, // First row: headers
         dataRow        // Second row: data
@@ -385,17 +369,19 @@ const FinalPage = () => {
         }
         
         const message = result.totalRowsNow > 1 
-          ? `Success! \n\n✅ CSV downloaded\n✅ Product data appended to Google Sheet\n\nSheet: ${result.tabName}\nTotal products: ${result.totalRowsNow - 1}\n\nOpening Google Sheet in new tab...`
-          : `Success! \n\n✅ CSV downloaded\n✅ New sheet created and data uploaded\n\nSheet: ${result.tabName}\n\nOpening Google Sheet in new tab...`;
+          ? `Success! \n\n✅ Product data appended to Google Sheet\n\nSheet: ${result.tabName}\nTotal products: ${result.totalRowsNow - 1}\n\nOpening Google Sheet in new tab...`
+          : `Success! \n\n✅ New sheet created and data uploaded\n\nSheet: ${result.tabName}\n\nOpening Google Sheet in new tab...`;
         
-        alert(message);
+        // alert(message);
       } else {
         console.error('❌ Failed to upload to Google Sheets:', result.error);
-        alert('CSV downloaded successfully, but failed to upload to Google Sheets: ' + result.error);
+        alert('Failed to upload to Google Sheets: ' + result.error);
       }
     } catch (error) {
       console.error('❌ Error uploading to Google Sheets:', error);
-      alert('CSV downloaded successfully, but failed to upload to Google Sheets. Please check console for details.');
+      alert('Failed to upload to Google Sheets. Please check console for details.');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -1066,11 +1052,23 @@ const FinalPage = () => {
                 {/* Action Buttons */}
                 <div className="flex flex-col gap-3 mt-6">
                   <button
-                    onClick={handleProceedAndExportCSV}
+                    onClick={handleProceedAndExportToSheets}
+                    disabled={isExporting}
                     className="w-full bg-[#FFD814] hover:bg-[#F7CA00] text-[#0F1111] py-3 px-4 rounded-lg 
-                    shadow-sm border border-[#FCD200] font-medium text-base transition-colors"
+                    shadow-sm border border-[#FCD200] font-medium text-base transition-colors
+                    disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
-                    Proceed & Export to CSV
+                    {isExporting ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5 text-[#0F1111]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>Exporting to Google Sheets...</span>
+                      </>
+                    ) : (
+                      'Export to Google Sheets'
+                    )}
                   </button>
                   {/* <button
                     onClick={handleDownload}
