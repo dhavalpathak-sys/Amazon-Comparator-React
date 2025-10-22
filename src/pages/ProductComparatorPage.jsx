@@ -686,9 +686,17 @@ const ProductComparator = () => {
   };
 
   const handleAcceptAttribute = (attrId) => {
+    const currentValue = attributeValues[attrId] || 
+                       productAttributes.find(attr => attr.id === attrId)?.scrapedValue || 
+                       '';
+    
     setProductAttributes(prev =>
       prev.map(attr =>
-        attr.id === attrId ? { ...attr, accepted: true, scrapedValue: attributeValues[attrId] } : attr
+        attr.id === attrId ? { 
+          ...attr, 
+          accepted: true, 
+          scrapedValue: currentValue 
+        } : attr
       )
     );
     setEditingAttributes(prev => ({ ...prev, [attrId]: false }));
@@ -715,7 +723,8 @@ const ProductComparator = () => {
         goldenValue: '',
         scrapedValue: newAttributeValue.trim(),
         accepted: false,
-        isExtra: true
+        isExtra: true, // Mark as custom attribute
+        section: 'Custom Attributes' // Add section for organization
       };
       setProductAttributes([...productAttributes, newAttr]);
       setAttributeValues(prev => ({ ...prev, [newId]: newAttributeValue.trim() }));
@@ -735,8 +744,9 @@ const ProductComparator = () => {
         description: acceptedDescription,
         attributes: productAttributes.map(attr => ({
           key: attr.key,
-          value: attr.scrapedValue,
-          accepted: attr.accepted
+          value: attr.scrapedValue || attributeValues[attr.id] || '',
+          accepted: attr.accepted,
+          isCustom: attr.isExtra || false // Mark custom attributes
         }))
       };
       console.log('Product Data:', productData);
@@ -758,15 +768,35 @@ const ProductComparator = () => {
         // Description
         description: acceptedDescription,
         
-        // Detailed sections
+        // Detailed sections - include custom attributes in appropriate sections
         productDetails: scrapedData.productDetails,
-        productDetailsArray: scrapedData.productDetailsArray || [],
+        productDetailsArray: [
+          ...(scrapedData.productDetailsArray || []),
+          // Add custom attributes to product details
+          ...productAttributes
+            .filter(attr => attr.isExtra && attr.accepted)
+            .map(attr => ({
+              label: attr.key,
+              value: attr.scrapedValue || attributeValues[attr.id] || '',
+              key: attr.key.toLowerCase().replace(/\s+/g, ''),
+              isCustom: true
+            }))
+        ],
         
         manufacturingDetails: scrapedData.manufacturingDetails,
         manufacturingDetailsArray: scrapedData.manufacturingDetailsArray || [],
         
         additionalInfo: scrapedData.additionalInfo,
         additionalInfoArray: scrapedData.additionalInfoArray || [],
+        
+        // Store the full accepted attributes including custom ones
+        acceptedAttributes: productAttributes.map(attr => ({
+          key: attr.key,
+          value: attr.scrapedValue || attributeValues[attr.id] || '',
+          accepted: attr.accepted,
+          isCustom: attr.isExtra || false,
+          section: attr.section || 'Custom Attributes'
+        })),
         
         // Store the full scraped data
         scrapedData: scrapedData

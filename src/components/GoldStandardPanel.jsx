@@ -98,6 +98,8 @@ const GoldStandardPanel = ({ product = {} }) => {
   const deduplicatedProductDetails = filterAlreadyDisplayedFields(removeDuplicates(product.productDetailsArray));
   const deduplicatedManufacturingDetails = filterAlreadyDisplayedFields(removeDuplicates(product.manufacturingDetailsArray));
   const deduplicatedAdditionalInfo = filterAlreadyDisplayedFields(removeDuplicates(product.additionalInfoArray));
+  const deduplicatedAboutThisItem = filterAlreadyDisplayedFields(removeDuplicates(product.aboutThisItemArray));
+
   
   // Deduplicate features array
   const deduplicatedFeatures = product.features ? [...new Set(product.features)] : [];
@@ -200,7 +202,7 @@ const GoldStandardPanel = ({ product = {} }) => {
             <div className="space-y-2">
               <div className="flex items-center space-x-2 text-gray-700">
                 <Package className="h-4 w-4" />
-                <h5 className="font-semibold text-sm">Key Features</h5>
+                <h5 className="font-semibold text-sm">About This Item</h5>
               </div>
               <ul className="space-y-2">
                 {deduplicatedFeatures.map((feature, index) => (
@@ -227,6 +229,28 @@ const GoldStandardPanel = ({ product = {} }) => {
                     <span className="text-gray-900 text-right flex-1 ml-2">{detail.value}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* About This Item Section */}
+          {hasData(deduplicatedAboutThisItem) && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                <span className="bg-blue-100 text-blue-800 p-1 rounded mr-2">
+                  <Info className="h-4 w-4" />
+                </span>
+                About This Item
+              </h3>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <ul className="space-y-3">
+                  {deduplicatedAboutThisItem.map((detail, index) => (
+                    <li key={index} className="flex items-start">
+                      <span className="text-blue-500 mr-3 mt-1 flex-shrink-0">•</span>
+                      <span className="text-gray-700 text-sm leading-relaxed">{detail.value}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           )}

@@ -582,6 +582,12 @@ const FinalPage = () => {
     // Try to find price in various formats
     if (product.price) return parseFloat(product.price);
     if (product.productDetails?.Price) return parseFloat(product.productDetails.Price);
+    if (product.productDetailsArray) {
+      const priceDetail = product.productDetailsArray.find(d => 
+        d.label && d.label.toLowerCase().includes('price')
+      );
+      if (priceDetail) return parseFloat(priceDetail.value);
+    }
     return 0;
   };
 
@@ -875,7 +881,7 @@ const FinalPage = () => {
               <div className="text-[#0F1111]">
                 <span className="text-sm">Price:</span>
                 <span className="text-[28px] text-[#0F1111] ml-2">
-                  ${comparisonData?.originalPrice}
+                  ₹{comparisonData?.originalPrice}
                 </span>
               </div>
               

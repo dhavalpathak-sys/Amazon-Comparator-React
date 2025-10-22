@@ -438,7 +438,7 @@ app.post('/api/scrape-product', async (req, res) => {
             console.error('  ❌ amz_scraper.py error:', amzScraperResult.reason?.message || amzScraperResult.reason);
         }
 
-        // Check if we got ANY data at all
+        // Check if we got ANY data at all 
         if (!scraperData && !amzData) {
             console.error('❌ Both scrapers failed completely');
             
@@ -463,22 +463,45 @@ app.post('/api/scrape-product', async (req, res) => {
             });
         }
 
-        // Extract images with fallback - prefer amz_scraper, fallback to scraper.py
+        // Enhanced merge with multiple fallbacks
+        const getAboutThisItem = (scraperData, amzData) => {
+            // Priority 1: scraper.py bullets
+            if (scraperData?.bullets && scraperData.bullets.length > 0) {
+                return scraperData.bullets;
+            }
+            
+            // Priority 2: amz_scraper aboutThisItem
+            if (amzData?.product?.aboutThisItem && amzData.product.aboutThisItem.length > 0) {
+                return amzData.product.aboutThisItem;
+            }
+            
+            // Priority 3: Check raw data for any bullet-like content
+            if (scraperData?.raw && scraperData.raw.bullets && scraperData.raw.bullets.length > 0) {
+                return scraperData.raw.bullets;
+            }
+            
+            // Final fallback
+            return ['No "About this item" information available.'];
+        };
+
+        // Extract images with fallback - prefer amz_scraper, fallback to scraper.py 
         const images = (amzData?.product?.images?.length > 0 
             ? amzData.product.images 
             : scraperData?.images || []);
 
-        // Merge results with fallback logic
+        // Merge results with fallback logic (combined approach)
         const mergedResult = {
             success: true,
             warnings: [],
             product: {
                 title: scraperData?.title || amzData?.product?.title || 'N/A',
                 description: scraperData?.description || amzData?.product?.description || 'N/A',
-                images: images
+                images: images,
+                aboutThisItem: getAboutThisItem(scraperData, amzData),
+                asin: scraperData?.asin || 'N/A'
             },
             details: {
-                featureBullets: scraperData?.bullets || [],
+                featureBullets: getAboutThisItem(scraperData, amzData),
                 productDetails: formatDetailsAsArray(scraperData?.productDetails),
                 manufacturingDetails: formatDetailsAsArray(scraperData?.manufacturingDetails),
                 additionalInfo: formatDetailsAsArray(scraperData?.additionalInfo)
@@ -486,17 +509,26 @@ app.post('/api/scrape-product', async (req, res) => {
             raw: {
                 productDetails: scraperData?.productDetails || {},
                 manufacturingDetails: scraperData?.manufacturingDetails || {},
-                additionalInfo: scraperData?.additionalInfo || {}
+                additionalInfo: scraperData?.additionalInfo || {},
+                bullets: scraperData?.bullets || [],
+                amzScraperBullets: amzData?.product?.aboutThisItem || []
             }
         };
 
-        // Add warnings if scrapers failed
+        // Add warnings if scrapers failed 
         if (scraperResult.status === 'rejected') {
             mergedResult.warnings.push('Text scraper failed - data may be incomplete');
         }
         if (amzScraperResult.status === 'rejected') {
             mergedResult.warnings.push('Image scraper failed - using fallback images');
         }
+
+        // Enhanced logging to debug the aboutThisItem data
+        console.log('📋 About this item bullets:', {
+            hasBullets: !!scraperData?.bullets,
+            bulletCount: scraperData?.bullets ? scraperData.bullets.length : 0,
+            bulletsSample: scraperData?.bullets ? scraperData.bullets.slice(0, 2) : 'none'
+        });
 
         // Log summary
         console.log('✅ Scraping completed with merged data:');
