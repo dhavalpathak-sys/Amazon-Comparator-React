@@ -96,7 +96,7 @@ def call_gemini(prompt, max_tokens):
         response = text_model.generate_content(
             prompt,
             generation_config=types.GenerationConfig(
-                temperature=0.8,
+                temperature=0.9,
                 max_output_tokens=max_tokens,
             ),
         )
@@ -296,6 +296,7 @@ Product Details (including all existing scraped names and descriptions, and all 
 IMPORTANT:
 - Max 200 characters for title.
 - Max 2000 characters for description.
+- Keep the description long as given in examples
 - Do NOT mirror any input name/description verbatim; provide a revised, value-added version.
 - Follow Amazon apparel copy conventions.
 
@@ -312,24 +313,11 @@ Neck: Crew Neck
 Sleeve: Short Sleeve
 Size: M
 Output:
-Product Name: Levi's Men's Slim Fit 100% Cotton Crew Neck T-Shirt | M
-Product Description: Crafted from 100% cotton, this Levi's men's slim fit t-shirt offers breathable comfort and a sleek, modern look. The classic crew neck and short sleeves make it ideal for casual outings. Pairs effortlessly with jeans or chinos for everyday style.
+Product Name: Levi's Men's Slim Fit 100% Cotton Crew Neck T-Shirt | Classic Solid Color Style | Breathable Everyday Wear | M
+Product Description: Discover the ultimate foundation piece for your casual wardrobe with the Levi's Men's Slim Fit T-Shirt. This essential tee is crafted entirely from 100% premium cotton, offering supreme softness against the skin and reliable all-day comfort. The natural cotton fibers ensure superior breathability, making it an ideal choice for warmer climates or layered styling. Designed with a modern slim fit, the shirt contours naturally to the body without feeling restrictive, providing a sharp, contemporary silhouette that is instantly flattering. It features a timeless crew neck and practical short sleeves, ensuring easy pairing with everything from denim and chinos to light jackets. The solid color and refined finish make it versatile enough for daily errands, casual Fridays, or weekend outings. Durable construction and quality stitching ensure this Levi's shirt maintains its shape and color through repeated washing. Invest in a closet staple that defines comfortable, understated style.
 
-# Example 2 - Men's Oversized Graphic T-Shirt
-Input:
-Brand: Bewakoof
-Department: Men
-Generic Name: T-Shirt
-Material: 100% Cotton
-Fit: Oversized
-Pattern: Graphic Print (Batman)
-Neck: Round Neck
-Size: XL
-Output:
-Product Name: Bewakoof Men's Oversized 100% Cotton Batman Graphic Round Neck T-Shirt | XL
-Product Description: Make a bold statement with this Bewakoof men's oversized Batman t-shirt. Made from 100% cotton for comfort and durability. The round neck and striking graphic print add a contemporary streetwear edge, perfect for casual wear.
 
-# Example 3 - Women's Anarkali Kurta Set
+# Example 2 - Women's Anarkali Kurta Set
 Input:
 Brand: KLOSIA
 Department: Women
@@ -341,8 +329,8 @@ Dupatta: Chanderi Cotton
 Sleeve: 3/4 Sleeve
 Length: Calf Length
 Output:
-Product Name: KLOSIA Women's 100% Viscose Printed Anarkali Kurta Set with Chanderi Cotton Dupatta
-Product Description: This KLOSIA women's Anarkali set combines traditional elegance with modern comfort. Crafted from 100% viscose with a printed design and Chanderi cotton dupatta, it flows gracefully while keeping you comfortable. Ideal for festive or casual ethnic occasions.
+Product Name: KLOSIA Women's 100% Viscose Printed Anarkali Kurta Set with Chanderi Cotton Dupatta | Festive 3/4 Sleeve Ethnic Wear
+Product Description: Embrace traditional grace and modern comfort with the KLOSIA Women's Anarkali Kurta Set, meticulously designed for festive and formal occasions. The kurta features a flattering **Anarkali fit**, characterized by its flowy, flared silhouette that starts just below the bust and extends elegantly to a **calf length**, creating a beautiful sweeping effect. The entire kurta is fashioned from 100% soft viscose fabric, known for its luxurious drape, lightweight feel, and vibrant color retention. It showcases an intricate all-over printed pattern, adding depth and traditional charm to the ensemble. Completing the look is a generously sized Chanderi Cotton dupatta, which is lightweight yet provides structure and features a delicate finish. The kurta is finished with elegant 3/4 sleeves, offering modest coverage. This set requires minimal accessorizing and is ideal for weddings, festivals, or cultural events, ensuring you look and feel comfortable while maintaining an ethereal, sophisticated presence.
 
 Subcategory: {subcategory}
 Details: {product_details}
