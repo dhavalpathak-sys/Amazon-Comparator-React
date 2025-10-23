@@ -385,7 +385,7 @@ const NewProductCreationPage = () => {
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-6">
         {/* Page Header */}
         <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Create New Product</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Create New Listing</h1>
           <p className="text-sm text-gray-600">
             Use the Gold Standard as your guide to create an optimized product listing
           </p>
@@ -399,11 +399,11 @@ const NewProductCreationPage = () => {
             {/* Left Column Header */}
             <div className="flex items-center gap-2">
               <Star className="h-6 w-6 fill-yellow-400 text-yellow-400" />
-              <h2 className="text-xl font-semibold text-gray-900">Gold Standard Product</h2>
+              <h2 className="text-xl font-semibold text-gray-900">Gold Standard Listing</h2>
             </div>
             {/* Right Column Header */}
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">Your New Product</h2>
+              <h2 className="text-xl font-semibold text-gray-900">Your New Listing</h2>
             </div>
           </div>
 
@@ -841,8 +841,8 @@ const NewProductCreationPage = () => {
           </h4>
           <ul className="text-sm text-blue-800 space-y-1.5">
             <li>• Use relevant keywords in your title for better searchability</li>
-            <li>• Include specific product details and benefits in the description</li>
-            <li>• Fill in all attributes to provide complete product information</li>
+            <li>• Include specific listing details and benefits in the description</li>
+            <li>• Fill in all attributes to provide complete listing information</li>
             <li>• Reference the gold standard for inspiration on structure and content</li>
           </ul>
         </div>

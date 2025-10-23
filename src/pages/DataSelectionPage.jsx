@@ -107,8 +107,9 @@ const DataSelectionPage = () => {
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
+    const todayDate = new Date().toISOString().split('T')[0];
     a.href = url;
-    a.download = `${selectedSeller}_raw_data.csv`;
+    a.download = `${selectedSeller}_${todayDate}_raw_data.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -121,7 +122,7 @@ const DataSelectionPage = () => {
           <div className="text-center space-y-3">
             <h1 className="text-2xl font-bold text-gray-900">Select Seller Data</h1>
             <p className="text-base text-gray-600 max-w-2xl mx-auto">
-              Choose a seller ID to load their product data and begin the optimization process.
+              Choose a seller ID to load their listing data and begin the optimization process.
             </p>
           </div>
 
@@ -207,10 +208,10 @@ const DataSelectionPage = () => {
             >
               <div className="p-4 border-b border-gray-200">
                 <h3 className="text-base font-semibold text-gray-900">
-                  Product Data for {selectedSeller}
+                  Listing Data for {selectedSeller}
                 </h3>
                 <p className="text-gray-600 mt-1 text-sm">
-                  Found {rawFilteredData.length} products
+                  Found {rawFilteredData.length} listings
                 </p>
               </div>
 
@@ -339,7 +340,7 @@ const DataSelectionPage = () => {
                   1
                 </div>
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">Select Data</h3>
-                <p className="text-gray-600 text-xs">Choose your seller ID to load all your product data for analysis</p>
+                <p className="text-gray-600 text-xs">Choose your seller ID to load all your listing data for analysis</p>
               </div>
               
               <div className="text-center p-4 bg-green-50 rounded-lg">
@@ -355,7 +356,7 @@ const DataSelectionPage = () => {
                   3
                 </div>
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">AI Optimization</h3>
-                <p className="text-gray-600 text-xs">Use AI tools to enhance titles, descriptions, and generate better product images</p>
+                <p className="text-gray-600 text-xs">Use AI tools to enhance titles, descriptions, and generate better product listing images</p>
               </div>
               
               <div className="text-center p-4 bg-orange-50 rounded-lg">

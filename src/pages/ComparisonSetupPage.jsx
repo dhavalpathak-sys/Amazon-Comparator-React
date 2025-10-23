@@ -331,7 +331,7 @@ const ComparisonSetupPage = () => {
 
         {/* Filter Bar */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Filter Products</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Filter Listings</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {filterColumns.map((column) => (
               <div key={column} className="relative">
@@ -373,9 +373,9 @@ const ComparisonSetupPage = () => {
                 {!areAllFiltersSelected() ? (
                   <span className="text-amber-600">⚠ Please select all filters</span>
                 ) : filteredProducts.length > 0 ? (
-                  <span className="text-green-600">✓ {filteredProducts.length} product(s) available (will re-fetch latest data)</span>
+                  <span className="text-green-600">✓ {filteredProducts.length} listing(s) available (will re-fetch latest data)</span>
                 ) : (
-                  <span className="text-red-600">⚠ No products match current filters</span>
+                  <span className="text-red-600">⚠ No listings match current filters</span>
                 )}
               </div>
 
@@ -425,7 +425,7 @@ const ComparisonSetupPage = () => {
               <div className="text-center">
                 <h2 className="text-xl font-bold text-gray-900 mb-1">Gold Standard</h2>
                 <p className="text-gray-600 text-sm">
-                  Reference product that serves as the benchmark for optimization
+                  Reference listing that serves as the benchmark for optimization
                 </p>
                 {loadedProduct.scrapedData && (
                   <div className="mt-2 inline-flex items-center space-x-2 bg-green-50 text-green-700 px-3 py-1 rounded-full text-xs font-medium">
@@ -456,7 +456,7 @@ const ComparisonSetupPage = () => {
                       }`}
                   >
                     <Edit3 className="h-4 w-4" />
-                    <span>Edit Existing Product</span>
+                    <span>Edit Existing Listing</span>
                   </button>
 
                   <button

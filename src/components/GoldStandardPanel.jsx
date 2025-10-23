@@ -110,7 +110,7 @@ const GoldStandardPanel = ({ product = {} }) => {
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Gold Standard Product</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Gold Standard Listing</h3>
             {product.amazonUrl && (
               <a
                 href={product.amazonUrl}
@@ -313,7 +313,7 @@ const GoldStandardPanel = ({ product = {} }) => {
     <div className="bg-white rounded-lg shadow-lg border border-gray-200 h-full">
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Gold Standard Product</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Gold Standard Listing</h3>
           {product.amazonUrl && (
             <a
               href={product.amazonUrl}

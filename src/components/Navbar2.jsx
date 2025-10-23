@@ -20,7 +20,7 @@ const Navbar = () => {
           <div className="flex items-center space-x-2 cursor-pointer" onClick={handleHomeClick}>
             <Package className="h-6 w-6 text-orange-400" />
             <h1 className="text-lg font-bold text-white hover:text-orange-400 transition-colors">
-              Amazon Product Comparator
+              Listro
             </h1>
           </div>
           

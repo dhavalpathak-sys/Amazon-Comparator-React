@@ -12,9 +12,9 @@ const LoginPage = () => {
                 <div className="bg-white rounded-2xl shadow-lg p-10 w-110 h-96">
                     <div className="text-center mb-6">
                         <div className="inline-flex items-center mb-5">
-                            <div className="ml-2 text-orange-600 text-2xl font-bold">COMPARATOR</div>
+                            <div className="ml-2 text-orange-600 text-3xl font-bold">Listro</div>
                         </div>
-                        <h2 className="text-3xl font-bold text-gray-900 p-2">Welcome to Amazon Product Comparator</h2>
+                        <h2 className="text-3xl font-bold text-gray-900 p-2">Welcome to Listro</h2>
                         <div className="mt-4 flex items-center justify-center">
                             <p className="text-gray-600 mt-2">Please sign in to continue.</p>
                         </div>
