@@ -50,3 +50,4 @@ coverage
 # ESLint cache
 .eslintcache
 backend/credentials.json
+backend/credentials.json
