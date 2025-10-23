@@ -1,6 +1,3 @@
-from dotenv import load_dotenv
-load_dotenv()
-
 import os
 import io
 import uuid
@@ -12,77 +9,64 @@ from PIL import Image
 import google.generativeai as genai
 from google.cloud import storage
 from google.generativeai import types
-# Import exceptions for better handling
 from google.cloud.exceptions import Forbidden 
+from dotenv import load_dotenv
 
+# --- FLASK AND CORS SETUP ---
 app = Flask(__name__)
-CORS(app)
+load_dotenv()
 
-# --- CONFIGURATION ---
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+# Configure CORS to explicitly allow multiple origins (FIXED CORS ISSUE)
+CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5173", "http://localhost:3000", "http://localhost:5000"]}})
+
+# --- API KEY & MODEL CONFIG ---
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_KEY")
 if not GOOGLE_API_KEY:
-    raise ValueError("Gemini API Key (GOOGLE_API_KEY) missing in .env file")
+    raise ValueError("Gemini API Key (GOOGLE_API_KEY/GEMINI_KEY) missing in .env file")
 
 genai.configure(api_key=GOOGLE_API_KEY)
 FLASH_IMAGE_MODEL_ID = "gemini-2.5-flash-image-preview"
 
 try:
-    model = genai.GenerativeModel(FLASH_IMAGE_MODEL_ID)
-    print(f"✅ Gemini model initialized: {FLASH_IMAGE_MODEL_ID}")
+    # Renamed to image_model to prevent conflict with text_model in call_gemini
+    image_model = genai.GenerativeModel(FLASH_IMAGE_MODEL_ID)
+    print(f"✅ Gemini Image model initialized: {FLASH_IMAGE_MODEL_ID}")
 except Exception as e:
     print(f"❌ Model initialization error: {e}")
-    raise
-
-# --- TEXT GENERATION CONFIGURATION ---
-gemini_key = os.getenv("GOOGLE_API_KEY")
-if not gemini_key:
-    raise RuntimeError("GEMINI_KEY environment variable is missing.")
-
-genai.configure(api_key=gemini_key)
+    # Raise only if the image part is strictly required, otherwise allow text to function
+    # raise
 
 OUTPUT_DIR = "generated_images"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# --- GOOGLE CLOUD STORAGE CONFIG ---
+# --- GOOGLE CLOUD STORAGE CONFIG (Retained) ---
 GCS_BUCKET_NAME = "amz-image-store"
 
 try:
-    # Initialize GCS client. It will use the ADC credentials and project ID you set.
     storage_client = storage.Client()
     print("✅ Google Cloud Storage client initialized.")
 except Exception as e:
-    # This will now only fail if the Project ID is missing or ADC is completely broken
     print(f"❌ GCS client initialization error: {e}")
-    # Do NOT raise here, let the upload function handle the specific GCS failure
     
 def upload_to_gcs(local_file_path, destination_blob_name):
     """
     Uploads file to GCS, makes it public, and returns the public URL.
-    Includes explicit error handling for GCS failures (like 403 Forbidden).
     """
     try:
         bucket = storage_client.bucket(GCS_BUCKET_NAME)
     except NameError:
-        # storage_client initialization failed during startup
         raise Exception("GCS client not available. Check startup logs.")
         
     blob = bucket.blob(destination_blob_name)
     
     try:
         print(f"DEBUG: Attempting to upload {local_file_path} to gs://{GCS_BUCKET_NAME}/{destination_blob_name}")
-        
-        # 1. Upload the file
         blob.upload_from_filename(local_file_path)
-        
-        # 2. Make it publicly readable (requires storage.objects.update permission)
-        #blob.make_public()
-        
         gcs_public_url = blob.public_url 
         print(f"✅ Uploaded to GCS. Public URL: {gcs_public_url}")
         return gcs_public_url
         
     except Forbidden as e:
-        # THIS IS THE MOST LIKELY REMAINING ERROR SOURCE (403 Forbidden)
         error_message = f"GCS Permission Denied (403): User lacks permission to upload or set public ACLs on bucket '{GCS_BUCKET_NAME}'. Ensure the ADC user has 'Storage Admin' role."
         print(f"❌ GCS Upload FAILED: {error_message}")
         raise Exception(error_message)
@@ -91,8 +75,84 @@ def upload_to_gcs(local_file_path, destination_blob_name):
         print(f"❌ GCS Upload FAILED: {error_message}")
         raise Exception(error_message)
 
+@app.route("/generated_images/<filename>")
+def serve_generated_image(filename):
+    return send_from_directory(OUTPUT_DIR, filename)
 
-# --- PROMPT TEMPLATES (UNCHANGED) ---
+# --- UTILITY FUNCTIONS ---
+def basic_clean(value):
+    """Strips newlines/tabs and surrounding whitespace from a value."""
+    # Ensure value is treated as a string before cleaning
+    return str(value).strip().replace('\n', ' ').replace('\t', ' ')
+
+# --- TEXT GENERATION API CALL FUNCTION (FIXED ERROR HANDLING) ---
+def call_gemini(prompt, max_tokens):
+    """
+    Calls the Gemini API and handles safety blocks (Finish Reason 2) and 
+    missing response text defensively (FIXED response.text error).
+    """
+    try:
+        text_model = genai.GenerativeModel("gemini-2.5-flash")
+        response = text_model.generate_content(
+            prompt,
+            generation_config=types.GenerationConfig(
+                temperature=0.8,
+                max_output_tokens=max_tokens,
+            ),
+        )
+        
+        # 1. Check if a candidate was returned
+        if not response.candidates:
+            return "Generation Failed: Model returned no candidates/output."
+
+        candidate = response.candidates[0]
+        finish_reason = candidate.finish_reason
+        
+        # Define the finish reasons using integer values for stability
+        # 2 is SAFETY, 1 is STOP
+        FINISH_REASON_SAFETY = 2
+        FINISH_REASON_STOP = 1
+
+        # 2. Check for safety block (Finish Reason 2)
+        is_safety_blocked = (finish_reason == FINISH_REASON_SAFETY)
+        
+        if is_safety_blocked:
+            safety_info = ""
+            if candidate.safety_ratings:
+                try:
+                    # Safely get the name of the blocked category
+                    blocked_category_name = candidate.safety_ratings[0].category.name
+                except AttributeError:
+                    blocked_category_name = f"Code {candidate.safety_ratings[0].category}"
+                    
+                safety_info = f" Blocked Category: {blocked_category_name}"
+
+            return f"Generation Failed: Output Blocked by Safety Filters (Finish Reason: SAFETY).{safety_info}"
+        
+        # 3. Successful completion check (STOP is 1)
+        if finish_reason == FINISH_REASON_STOP and hasattr(response, "text") and response.text:
+            return response.text.strip()
+        
+        # 4. Check for other non-successful stops (like MAX_TOKENS, or 0/UNSPECIFIED)
+        if finish_reason != FINISH_REASON_STOP:
+            try:
+                # Safely attempt to get the enum name
+                finish_reason_name = types.FinishReason(finish_reason).name
+            except (ValueError, AttributeError):
+                finish_reason_name = f"Code {finish_reason}"
+                
+            return f"Generation Failed: Model stopped with reason: {finish_reason_name}."
+            
+        # 5. Last resort check for empty text
+        return "Generation Failed: Model returned no valid text parts."
+        
+    except Exception as e:
+        # Catch all exceptions generically
+        return f"Generation Failed: API Error. {type(e).__name__} - {str(e)}"
+
+
+# --- PROMPT TEMPLATES (Retained) ---
+
 def get_prompt_model_generate_with_a_white_background():
     return (
         "Transform the subject into a high-quality fashion photo of a [Gender] model standing upright "
@@ -128,12 +188,9 @@ PROMPT_FUNCTIONS = [
     get_prompt_model_generate_with_a_white_background,
     get_prompt_product_image_with_a_white_background,
     get_prompt_image_of_the_model_in_a_lively_event_setting,
-    get_prompt_image_of_the_model_in_a_lively_event_setting, # Duplicated, corrected index 3 below
+    get_prompt_image_of_the_model_from_the_left_or_right_or_back,
     get_prompt_infographic_image_with_details_of_the_product,
 ]
-
-# Ensure index 3 uses the correct prompt function
-PROMPT_FUNCTIONS[3] = get_prompt_image_of_the_model_from_the_left_or_right_or_back
 
 
 def replace_placeholders(prompt: str, attributes: dict) -> str:
@@ -144,15 +201,13 @@ def replace_placeholders(prompt: str, attributes: dict) -> str:
         return attributes.get(key, f"[{key}]")
     return re.sub(pattern, replacer, prompt)
 
-# --- IMAGE GENERATION ENDPOINT ---
+# --- IMAGE GENERATION ENDPOINT (Retained) ---
 @app.route("/generate-image", methods=["POST"])
 def generate_image_api():
     if "image" not in request.files:
         return jsonify({"error": "No image uploaded"}), 400
 
     file = request.files["image"]
-    
-    # Store the stream in a temporary in-memory buffer to use for both PIL and FormData later
     img_stream = io.BytesIO(file.read())
     img_stream.seek(0)
     
@@ -160,7 +215,6 @@ def generate_image_api():
         uploaded_image = Image.open(img_stream).convert("RGB")
     except Exception as e:
         return jsonify({"error": f"Invalid image file: {str(e)}"}), 400
-
 
     try:
         style_index = int(request.form.get("style_index", -1))
@@ -185,8 +239,7 @@ def generate_image_api():
             f"Instructions: {final_prompt} Avoid distortion, blur, watermarks, or cropping."
         )
 
-        # Pass PIL image and prompt to the model
-        response = model.generate_content(
+        response = image_model.generate_content(
             [uploaded_image, full_prompt],
             generation_config=genai.types.GenerationConfig(
                 temperature=0.6, top_p=0.9, top_k=40
@@ -201,53 +254,50 @@ def generate_image_api():
                 unique_filename = f"generated_{uuid.uuid4().hex}.png"
                 local_path = os.path.join(OUTPUT_DIR, unique_filename)
                 
-                # Save locally (needed before GCS upload)
                 img.save(local_path)
 
                 gcs_blob_name = f"generated/{unique_filename}"
-                
-                # This function now has specific error handling
                 gcs_url = upload_to_gcs(local_path, gcs_blob_name)
 
-                # The frontend will check the 'gcs_url'
                 return jsonify({
                     "filename": unique_filename,
                     "gcs_url": gcs_url
                 }), 200
 
-        return jsonify({"error": "No image returned from model."}), 500
+        return jsonify({"error": "No image returned from model, possibly blocked."}), 500
 
     except Exception as e:
-        # Catch any failure during generation or upload and send to frontend
         return jsonify({"error": f"Generation/Upload failed: {str(e)}"}), 500
 
 
-@app.route("/generated_images/<filename>")
-def serve_generated_image(filename):
-    return send_from_directory(OUTPUT_DIR, filename)
+# --- TEXT PROMPT TEMPLATES (Retained) ---
 
-
-# --- TEXT GENERATION FUNCTIONS ---
 def create_base_prompt(subcategory, product_details, task_type):
-    if task_type == 'name':
-        instruction = "TASK: Write exactly one labeled line: Product Name: [title here]"
-    else:
-        instruction = "TASK: Write exactly one labeled line: Product Description: [description here]"
+    # Choose label based on task type
+    item_type_label = "Product Title" if task_type == 'name' else "Product Description"
+    output_label = "Product Name:" if task_type == 'name' else "Product Description:"
+
+    instruction = (
+        f"TASK: Using all of the following Product Details—including any existing product name or description—generate a new, unique, high-quality Amazon {item_type_label}. "
+        f"Do NOT repeat or closely paraphrase any existing title or description text verbatim. Instead, rewrite and improve them: be clear, factual, concise, and use Amazon best practices. "
+        "Base your answer ONLY on the given details. Avoid promotional language. Mention brand once; focus on material, fit, pattern, neck, sleeve, color, and size. End with a complete sentence."
+        "\n\n"
+        f"Return your answer as exactly one labeled line for this task:\n{output_label} [output here]"
+    )
+
     return f"""
 You are an expert Amazon e-commerce copywriter specializing in Clothing.
-Only generate factual and accurate output based solely on the provided details.
 {instruction}
 
-Product Details:
+Product Details (including all existing scraped names and descriptions, and all product attributes):
 {subcategory}
 {product_details}
 
 IMPORTANT:
-Max 200 characters for title.
-Max 2000 characters for description.
-Mention brand once, focus on material, fit, pattern, neck, sleeve, color, size.
-No promotional language.
-End description with a complete sentence.
+- Max 200 characters for title.
+- Max 2000 characters for description.
+- Do NOT mirror any input name/description verbatim; provide a revised, value-added version.
+- Follow Amazon apparel copy conventions.
 
 GOOD EXAMPLES
 # Example 1 - Men's Slim Fit Cotton T-Shirt
@@ -298,23 +348,8 @@ Subcategory: {subcategory}
 Details: {product_details}
 """
 
-def call_gemini(prompt, max_tokens):
-    try:
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(
-            prompt,
-            generation_config=types.GenerationConfig(
-                temperature=0.8,
-                max_output_tokens=max_tokens,
-            ),
-        )
-        if hasattr(response, "text") and response.text:
-            return response.text.strip()
-        else:
-            return "Generation Failed: Model returned no output."
-    except Exception as e:
-        return f"Generation Failed: API Error. {str(e)}"
 
+# --- TEXT GENERATION LOGIC ---
 
 def generate_product_name(subcategory, product_details):
     prompt = create_base_prompt(subcategory, product_details, 'name')
@@ -332,26 +367,43 @@ def generate_product_description(subcategory, product_details):
         return raw_output[len(label):].strip()
     return raw_output
 
-# --- TEXT GENERATION ENDPOINT ---
+# --- TEXT GENERATION ENDPOINT (FIXED ERROR PROPAGATION) ---
 @app.route('/api/generate-title-description', methods=['POST'])
 def generate_title_description():
     data = request.get_json()
-    subcategory = data.get('subcategory', '')
-    product_details = "\n".join(
-        [f"{k}: {v}" for k, v in data.items() if k not in ('subcategory', 'type')]
-    )
+    subcategory = basic_clean(data.get('subcategory', 'T-Shirt'))
+    
+    # Robustly construct product details
+    product_details_lines = []
+    for k, v in data.items():
+        if k not in ('subcategory', 'type') and v and str(v).strip():
+            product_details_lines.append(f"{k}: {basic_clean(v)}")
+
+
+    product_details = "\n".join(product_details_lines)
     task_type = data.get('type', 'title')
-    if not subcategory or not product_details:
-        return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+    
+    # Require subcategory and at least two fields
+    if not subcategory or len(product_details_lines) < 2:
+        return jsonify({'success': False, 'error': 'Missing required detail fields for good AI output.'}), 400
+
     if task_type == 'title':
         generated_title = generate_product_name(subcategory, product_details)
+        # Check for failure message and return 500
+        if generated_title.startswith("Generation Failed:"):
+            return jsonify({'success': False, 'error': generated_title}), 500
         return jsonify({'success': True, 'generated_title': generated_title})
+        
     elif task_type == 'description':
         generated_description = generate_product_description(subcategory, product_details)
+        # Check for failure message and return 500
+        if generated_description.startswith("Generation Failed:"):
+            return jsonify({'success': False, 'error': generated_description}), 500
         return jsonify({'success': True, 'generated_description': generated_description})
+        
     else:
         return jsonify({'success': False, 'error': 'Unknown type specified'}), 400
 
-
 if __name__ == "__main__":
+    # Ensure correct environment variables are set for both Flask and GCS/Gemini
     app.run(host="0.0.0.0", port=5000, debug=True)
