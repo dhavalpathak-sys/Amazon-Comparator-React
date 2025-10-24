@@ -110,6 +110,9 @@ const ImageComparisonPage = () => {
     Array(7).fill(null).map(() => ({ url: null, isLoading: false }))
   );
 
+  // Track which image is selected per row (0 = existing, 1 = generated)
+  const [selectedImages, setSelectedImages] = useState(Array(7).fill(null));
+
   const imageLabels = [
     'Main Product',
     'Front View',
@@ -232,43 +235,85 @@ const ImageComparisonPage = () => {
     });
   };
 
+  const handleImageSelection = (rowIndex, imageType) => {
+    // imageType: 0 = existing, 1 = generated
+    const newSelection = [...selectedImages];
+    
+    // Toggle selection: if clicking on already selected, deselect it
+    if (newSelection[rowIndex] === imageType) {
+      newSelection[rowIndex] = null;
+    } else {
+      newSelection[rowIndex] = imageType;
+    }
+    
+    setSelectedImages(newSelection);
+    console.log(`🖱️ Row ${rowIndex} selection changed to:`, imageType === 0 ? 'existing' : 'generated');
+  };
+
   const handleSaveChanges = () => {
+    // For new products: require all 7 images to be generated
+    if (isNewProduct) {
+      const generatedCount = generatedImages.filter(img => img.url !== null).length;
+      if (generatedCount < 7) {
+        alert(`⚠️ Please generate all 7 images before proceeding. Currently generated: ${generatedCount}/7`);
+        return;
+      }
+    } else {
+      // For existing products: require exactly 7 selections (one per row)
+      const selectedCount = selectedImages.filter(sel => sel !== null).length;
+      if (selectedCount < 7) {
+        alert(`⚠️ Please select one image per row (7 total). Currently selected: ${selectedCount}/7`);
+        return;
+      }
+    }
     
-    // Get existing product images
-    const existingImages = getExistingImages().filter(img => img !== null);
-    
-    // Collect all generated image URLs (non-null)
-    const generatedImageUrls = generatedImages
-      .filter(img => img.url !== null)
-      .map(img => img.url);
-    
-    // Merge existing images with generated images
-    // Create a combined array with structure: { url, type, label }
     const allImages = [];
+    const generatedImageUrls = [];
     
-    // Add existing images
-    existingImages.forEach((url, index) => {
-      allImages.push({
-        url: url,
-        type: 'existing',
-        label: imageLabels[index] || `Image ${index + 1}`
+    if (isNewProduct) {
+      // For new products: collect all generated images
+      generatedImages.forEach((imgData, index) => {
+        if (imgData.url) {
+          allImages.push({
+            url: imgData.url,
+            type: 'generated',
+            label: imageLabels[index] || `Generated ${index + 1}`
+          });
+          generatedImageUrls.push(imgData.url);
+        }
       });
-    });
+    } else {
+      // For existing products: collect only selected images
+      const existingImages = getExistingImages();
+      
+      selectedImages.forEach((selection, index) => {
+        if (selection === 0) {
+          // User selected existing image
+          const existingUrl = existingImages[index];
+          if (existingUrl) {
+            allImages.push({
+              url: existingUrl,
+              type: 'existing',
+              label: imageLabels[index] || `Image ${index + 1}`
+            });
+          }
+        } else if (selection === 1) {
+          // User selected generated image
+          const generatedUrl = generatedImages[index].url;
+          if (generatedUrl) {
+            allImages.push({
+              url: generatedUrl,
+              type: 'generated',
+              label: imageLabels[index] || `Generated ${index + 1}`
+            });
+            generatedImageUrls.push(generatedUrl);
+          }
+        }
+      });
+    }
     
-    // // Add generated images
-    // generatedImages.forEach((imgData, index) => {
-    //   if (imgData.url) {
-    //     allImages.push({
-    //       url: imgData.url,
-    //       type: 'generated',
-    //       label: imageLabels[index] || `Generated ${index + 1}`
-    //     });
-    //   }
-    // });
-    
-    console.log('📦 Existing images:', existingImages.length);
-    console.log('🎨 Generated images:', generatedImageUrls.length);
-    console.log('✅ Total combined images:', allImages.length);
+    console.log('📦 Selected/Generated images:', allImages.length);
+    console.log('🎨 Generated images only:', generatedImageUrls.length);
     console.log('📋 All images data:', allImages);
     
     // Save both to localStorage
@@ -279,9 +324,22 @@ const ImageComparisonPage = () => {
     navigate('/final-page');
   };
 
-  const ImageCard = ({ src, alt, label, type, index = null, onGenerate = null, isLoading = false }) => (
-    <div className="bg-white rounded-md border border-gray-200 overflow-hidden mb-2">
+  const ImageCard = ({ src, alt, label, type, index = null, onGenerate = null, isLoading = false, isSelected = false, onSelect = null }) => (
+    <div className={`bg-white rounded-md border-2 overflow-hidden mb-2 transition-all ${
+      isSelected ? 'border-green-500 shadow-lg ring-2 ring-green-300' : 'border-gray-200'
+    } ${onSelect && src ? 'cursor-pointer hover:border-blue-300' : ''}`}
+    onClick={() => onSelect && src && !isLoading && onSelect()}
+    >
       <div className="aspect-square bg-gray-50 flex items-center justify-center relative">
+        {/* Selection indicator */}
+        {isSelected && (
+          <div className="absolute top-1 right-1 bg-green-500 text-white rounded-full p-1 z-20 shadow-lg">
+            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+            </svg>
+          </div>
+        )}
+        
         {/* For reference/current types with no image */}
         {(type === 'reference' || type === 'current') && !src && (
           <div className="flex flex-col items-center justify-center p-3 text-center">
@@ -292,7 +350,10 @@ const ImageComparisonPage = () => {
         {/* For generate type - show generate button when no image */}
         {type === 'generate' && !src && !isLoading && (
           <button
-            onClick={() => onGenerate(index)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onGenerate(index);
+            }}
             className="flex flex-col items-center justify-center p-3 text-center hover:bg-gray-100 transition-colors w-full h-full"
           >
             <Wand2 className="h-5 w-5 text-blue-600 mb-1" />
@@ -314,8 +375,11 @@ const ImageComparisonPage = () => {
             <img
               src={src}
               alt={alt}
-              className="w-full h-full object-contain cursor-pointer hover:opacity-90 transition-opacity"
-              onClick={() => setPreviewImage({ src, alt, label })}
+              className="w-full h-full object-contain hover:opacity-90 transition-opacity"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPreviewImage({ src, alt, label });
+              }}
               onError={(e) => {
                 console.error('Image load error for:', src);
                 e.target.src = `https://placehold.co/250x250/E5E7EB/6B7280?text=${encodeURIComponent(alt)}`;
@@ -360,6 +424,11 @@ const ImageComparisonPage = () => {
       </div>
       <div className="p-2">
         <h4 className="text-xs font-medium text-gray-900 text-center">{label}</h4>
+        {onSelect && src && !isLoading && (
+          <p className="text-xs text-center text-gray-500 mt-1">
+            {isSelected ? '✓ Selected' : 'Click to select'}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -470,91 +539,178 @@ const ImageComparisonPage = () => {
 
           {/* Two or Three Column Layout with Overall Border */}
         <div className="bg-white rounded-lg shadow-lg border-2 border-gray-300 p-4">
-          <div className={`grid grid-cols-1 ${isNewProduct ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-4`}>
-            {/* Gold Standard Images */}
-            <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3">
-              <div className="text-center mb-3">
-                <h2 className="text-base font-bold text-gray-900 mb-1">Gold Standard Images</h2>
-                <p className="text-xs text-gray-600">Reference benchmark images</p>
-                {/* {goldStandardProduct && (
-                  <p className="text-xs text-blue-600 mt-1 font-medium truncate" title={goldStandardProduct.title}>
-                    {goldStandardProduct.title}
-                  </p>
-                )} */}
+          {isNewProduct ? (
+            // New Product: Two columns layout (Gold Standard + AI Generated)
+            <div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                <p className="text-sm text-blue-900 text-center font-medium">
+                  ⚠️ For new products, please generate all 7 images before proceeding
+                </p>
               </div>
-              <div className="space-y-1">
-                {getGoldStandardImages().map((src, index) => (
-                  <ImageCard
-                    key={`gold-${index}`}
-                    src={src}
-                    alt={`Gold standard ${imageLabels[index]}`}
-                    label={imageLabels[index]}
-                    type="reference"
-                  />
-                ))}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Gold Standard Images */}
+                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3">
+                  <div className="text-center mb-3">
+                    <h2 className="text-base font-bold text-gray-900 mb-1">Gold Standard Images</h2>
+                    <p className="text-xs text-gray-600">Reference benchmark images</p>
+                  </div>
+                  <div className="space-y-1">
+                    {getGoldStandardImages().map((src, index) => (
+                      <ImageCard
+                        key={`gold-${index}`}
+                        src={src}
+                        alt={`Gold standard ${imageLabels[index]}`}
+                        label={imageLabels[index]}
+                        type="reference"
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* AI Generated Images */}
+                <div className="border-2 border-blue-300 rounded-lg p-3">
+                  <div className="text-center mb-3">
+                    <h2 className="text-base font-bold text-gray-900 mb-1">AI Generated Images</h2>
+                    <p className="text-xs text-gray-600">Create optimized alternatives</p>
+                    <div className="mt-2 inline-block bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-medium">
+                      {generatedImages.filter(img => img.url !== null).length} / 7 Generated
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    {generatedImages.map((imgData, index) => (
+                      <ImageCard
+                        key={`generated-${index}`}
+                        src={imgData.url}
+                        alt={`AI generated ${imageLabels[index]}`}
+                        label={imageLabels[index]}
+                        type="generate"
+                        index={index}
+                        onGenerate={handleGenerateImage}
+                        isLoading={imgData.isLoading}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-
-            {/* Your Existing Images - Only show if NOT coming from new product page */}
-            {!isNewProduct && (
-              <div className="border-2 border-gray-300 rounded-lg p-3">
-                <div className="text-center mb-3">
-                  <h2 className="text-base font-bold text-gray-900 mb-1">Your Existing Images</h2>
-                  <p className="text-xs text-gray-600">Current product images</p>
-                  {/* {existingProduct && (
-                    <p className="text-xs text-green-600 mt-1 font-medium truncate" title={existingProduct.title}>
-                      {existingProduct.title}
-                    </p>
-                  )} */}
-                </div>
-                <div className="space-y-1">
-                  {getExistingImages().map((src, index) => (
-                    <ImageCard
-                      key={`existing-${index}`}
-                      src={src}
-                      alt={`Current ${imageLabels[index]}`}
-                      label={imageLabels[index]}
-                      type="current"
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* AI Generated Images */}
-            <div className="border-2 border-blue-300 rounded-lg p-3">
-              <div className="text-center mb-3">
-                <h2 className="text-base font-bold text-gray-900 mb-1">AI Generated Images</h2>
-                <p className="text-xs text-gray-600">Create optimized alternatives</p>
-              </div>
-              <div className="space-y-1">
-                {generatedImages.map((imgData, index) => (
-                  <ImageCard
-                    key={`generated-${index}`}
-                    src={imgData.url}
-                    alt={`AI generated ${imageLabels[index]}`}
-                    label={imageLabels[index]}
-                    type="generate"
-                    index={index}
-                    onGenerate={handleGenerateImage}
-                    isLoading={imgData.isLoading}
-                  />
-                ))}
+          ) : (
+            // Existing Product: Row-based selection layout
+            <div>
+              {/* <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                <p className="text-sm text-green-900 text-center font-medium">
+                  ⚠️ Please select ONE image per row (existing or generated) - Total 7 selections required
+                </p>
+                <p className="text-xs text-green-700 text-center mt-1">
+                  Selected: {selectedImages.filter(sel => sel !== null).length} / 7
+                </p>
+              </div> */}
+              
+              {/* Row-based layout */}
+              <div className="space-y-4">
+                {imageLabels.map((label, index) => {
+                  const existingImg = getExistingImages()[index];
+                  const generatedImg = generatedImages[index];
+                  
+                  return (
+                    <div key={`row-${index}`} className="bg-gray-50 border-2 border-gray-300 rounded-lg p-3">
+                      <div className="text-center mb-2">
+                        <h3 className="text-sm font-bold text-gray-900">{label}</h3>
+                        <p className="text-xs text-gray-600">Select one image for this slot</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Gold Standard (reference only) */}
+                        <div>
+                          <div className="text-center mb-2">
+                            <span className="text-xs font-semibold text-yellow-700 bg-yellow-100 px-2 py-1 rounded">
+                              Gold Standard
+                            </span>
+                          </div>
+                          <ImageCard
+                            src={getGoldStandardImages()[index]}
+                            alt={`Gold standard ${label}`}
+                            label="Reference"
+                            type="reference"
+                          />
+                        </div>
+                        
+                        {/* Existing Image (selectable) */}
+                        <div>
+                          <div className="text-center mb-2">
+                            <span className="text-xs font-semibold text-gray-700 bg-gray-200 px-2 py-1 rounded">
+                              Your Existing
+                            </span>
+                          </div>
+                          <ImageCard
+                            src={existingImg}
+                            alt={`Existing ${label}`}
+                            // label={existingImg ? "Click to select" : "No image"}
+                            type="current"
+                            isSelected={selectedImages[index] === 0}
+                            onSelect={existingImg ? () => handleImageSelection(index, 0) : null}
+                          />
+                        </div>
+                        
+                        {/* Generated Image (selectable) */}
+                        <div>
+                          <div className="text-center mb-2">
+                            <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2 py-1 rounded">
+                              AI Generated
+                            </span>
+                          </div>
+                          <ImageCard
+                            src={generatedImg.url}
+                            alt={`AI generated ${label}`}
+                            // label={generatedImg.url ? "Click to select" : "Generate"}
+                            type="generate"
+                            index={index}
+                            onGenerate={handleGenerateImage}
+                            isLoading={generatedImg.isLoading}
+                            isSelected={selectedImages[index] === 1}
+                            onSelect={generatedImg.url ? () => handleImageSelection(index, 1) : null}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          </div>
+          )}
         </div>        {/* Action Bar */}
         <div className="mt-4 bg-white rounded-lg shadow-sm border border-gray-200 p-3">
           <div className="flex items-center justify-between">
             <div className="text-xs text-gray-600">
-              <span className="font-medium">Generated Images:</span>
-              <span className="ml-2">
-                {generatedImages.filter(img => img.url !== null).length} of {generatedImages.length} completed
-              </span>
+              {isNewProduct ? (
+                <>
+                  <span className="font-medium">Generated Images:</span>
+                  <span className="ml-2">
+                    {generatedImages.filter(img => img.url !== null).length} of {generatedImages.length} completed
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="font-medium">Selected Images:</span>
+                  <span className="ml-2">
+                    {selectedImages.filter(sel => sel !== null).length} of 7 selected
+                  </span>
+                
+                </>
+              )}
             </div>
             <button
               onClick={handleSaveChanges}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors text-sm ${
+                (isNewProduct && generatedImages.filter(img => img.url !== null).length === 7) ||
+                (!isNewProduct && selectedImages.filter(sel => sel !== null).length === 7)
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+              disabled={
+                isNewProduct 
+                  ? generatedImages.filter(img => img.url !== null).length < 7
+                  : selectedImages.filter(sel => sel !== null).length < 7
+              }
             >
               <ArrowRight className="h-4 w-4" />
               <span>Proceed</span>
