@@ -621,6 +621,18 @@ const FinalPage = () => {
       // Extract brand name (first part before comma)
       return manufacturer.split(',')[0].trim();
     }
+    if (product.productDetailsArray) {
+      const brandDetail = product.productDetailsArray.find(d => 
+        d.label && d.label.toLowerCase().includes('brand')
+      );
+      if (brandDetail) return brandDetail.value;
+    }
+
+    if(product.productDetails?.Brand) {
+      return product.productDetails.Brand;
+    }
+
+    
     
     return null;
   };

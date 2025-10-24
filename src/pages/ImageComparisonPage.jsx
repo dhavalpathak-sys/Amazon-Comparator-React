@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { generateAIImage } from '../api/api';
-import { Wand2, Loader2, ArrowRight, X, Upload, Download, Link } from 'lucide-react';
+import { Wand2, Loader2, ArrowRight, X, Upload, Download, Link, Images } from 'lucide-react';
 
 const ImageComparisonPage = () => {
   const navigate = useNavigate();
@@ -16,6 +16,9 @@ const ImageComparisonPage = () => {
   const [existingProduct, setExistingProduct] = useState(null);
   // Get isNewProduct from navigation state
   const [isNewProduct, setIsNewProduct] = useState(location.state?.isNewProduct || false);
+  
+  // New state for existing images dialog
+  const [showExistingImagesDialog, setShowExistingImagesDialog] = useState(false);
 
   // Load product data from localStorage on component mount
   useEffect(() => {
@@ -106,6 +109,44 @@ const ImageComparisonPage = () => {
     return emptyArray; // Return empty array if no images
   };
 
+  // Get all unique existing images for the dialog
+  const getAllExistingImages = () => {
+    if (existingProduct && existingProduct.images && existingProduct.images.length > 0) {
+      // Filter out duplicates and return all images
+      const uniqueImages = [...new Set(existingProduct.images)];
+      return uniqueImages;
+    }
+    return [];
+  };
+
+  // Function to convert image URL to File object
+  const urlToFile = async (imageUrl, filename) => {
+    try {
+      console.log('🔄 Converting URL to File:', imageUrl);
+      
+      // Fetch the image
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status}`);
+      }
+      
+      // Get the image as blob
+      const blob = await response.blob();
+      
+      // Create a File object from the blob
+      const file = new File([blob], filename, { 
+        type: blob.type || 'image/jpeg',
+        lastModified: Date.now()
+      });
+      
+      console.log('✅ Successfully converted URL to File:', file);
+      return file;
+    } catch (error) {
+      console.error('❌ Error converting URL to File:', error);
+      throw error;
+    }
+  };
+
   const [generatedImages, setGeneratedImages] = useState(
     Array(7).fill(null).map(() => ({ url: null, isLoading: false }))
   );
@@ -124,8 +165,8 @@ const ImageComparisonPage = () => {
   ];
 
   const handleGenerateImage = async (index) => {
-    if (!referenceFile) {
-      alert('Please upload a reference image first!');
+    if (!referenceFile && !referenceImage) {
+      alert('Please upload or select a reference image first!');
       return;
     }
 
@@ -163,8 +204,28 @@ const ImageComparisonPage = () => {
     );
 
     try {
+      let imageFile = referenceFile;
+      
+      // If we have a referenceImage URL but no file, convert the URL to a File
+      if (!referenceFile && referenceImage) {
+        console.log('🔄 Converting reference image URL to File...');
+        try {
+          imageFile = await urlToFile(referenceImage, `reference-image-${Date.now()}.jpg`);
+          console.log('✅ Successfully converted reference image to File');
+        } catch (conversionError) {
+          console.error('❌ Failed to convert reference image:', conversionError);
+          throw new Error('Failed to process reference image. Please try uploading the image directly instead.');
+        }
+      }
+
+      if (!imageFile) {
+        throw new Error('No reference image available for generation');
+      }
+
+      console.log('🚀 Calling generateAIImage with file:', imageFile);
+      
       // Call the real API with reference image file, style index, and attributes
-      const newImageUrl = await generateAIImage(referenceFile, styleIndex, normalizedAttributes);
+      const newImageUrl = await generateAIImage(imageFile, styleIndex, normalizedAttributes);
       setGeneratedImages(prev => 
         prev.map((img, i) => 
           i === index ? { url: newImageUrl, isLoading: false } : img
@@ -181,6 +242,10 @@ const ImageComparisonPage = () => {
         errorMessage = 'This image style is not yet available. Please try another style.';
       } else if (errorMessage.includes('safety filters')) {
         errorMessage = 'Content generation was blocked by safety filters. Please try a different reference image or style.';
+      } else if (errorMessage.includes('No image uploaded')) {
+        errorMessage = 'Reference image processing failed. Please try uploading the image directly or select a different existing image.';
+      } else if (errorMessage.includes('Failed to process reference image')) {
+        errorMessage = error.message; // Use the specific error message from conversion
       }
       
       alert(`Failed to generate image: ${errorMessage}`);
@@ -201,12 +266,33 @@ const ImageComparisonPage = () => {
         setReferenceImage(e.target.result);
       };
       reader.readAsDataURL(file);
+      console.log('✅ Reference image uploaded:', file.name);
+    }
+  };
+
+  const handleSelectExistingImage = async (imageUrl) => {
+    try {
+      console.log('🔄 Selecting existing image as reference:', imageUrl);
+      
+      // Convert the selected image URL to a File object
+      const file = await urlToFile(imageUrl, `existing-reference-${Date.now()}.jpg`);
+      
+      // Set both the file and the image URL for display
+      setReferenceFile(file);
+      setReferenceImage(imageUrl);
+      setShowExistingImagesDialog(false);
+      
+      console.log('✅ Successfully set existing image as reference');
+    } catch (error) {
+      console.error('❌ Failed to select existing image:', error);
+      alert('Failed to select this image as reference. Please try uploading the image directly or select a different image.');
     }
   };
 
   const handleRemoveReferenceImage = () => {
     setReferenceImage(null);
     setReferenceFile(null);
+    console.log('🗑️ Reference image removed');
   };
 
   const handleDownloadImage = (imageUrl, imageName) => {
@@ -433,6 +519,84 @@ const ImageComparisonPage = () => {
     </div>
   );
 
+  // Existing Images Dialog Component
+  const ExistingImagesDialog = () => {
+    const existingImages = getAllExistingImages();
+    
+    return (
+      <div 
+        className="fixed inset-0 flex items-center justify-center z-50 p-4 bg-black bg-opacity-50"
+        onClick={() => setShowExistingImagesDialog(false)}
+      >
+        <div 
+          className="relative bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-hidden border-4 border-blue-500 animate-scaleIn"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Select Existing Image as Reference</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Choose an image from your existing product images to use as reference for AI generation
+              </p>
+            </div>
+            <button
+              onClick={() => setShowExistingImagesDialog(false)}
+              className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-1 transition-all duration-200"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+          
+          <div className="p-6 bg-gray-50 max-h-[65vh] overflow-y-auto">
+            {existingImages.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {existingImages.map((imageUrl, index) => (
+                  <div
+                    key={index}
+                    className="bg-white rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer hover:border-blue-400 hover:shadow-md transition-all"
+                    onClick={() => handleSelectExistingImage(imageUrl)}
+                  >
+                    <div className="aspect-square bg-gray-100 flex items-center justify-center">
+                      <img
+                        src={imageUrl}
+                        alt={`Existing product image ${index + 1}`}
+                        className="w-full h-full object-contain"
+                        onError={(e) => {
+                          e.target.src = `https://placehold.co/200x200/E5E7EB/6B7280?text=Image+${index + 1}`;
+                        }}
+                      />
+                    </div>
+                    <div className="p-2 text-center">
+                      <span className="text-xs font-medium text-gray-700">Image {index + 1}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Images className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-600">No existing product images found.</p>
+                <p className="text-sm text-gray-500 mt-1">Please upload images in the previous steps.</p>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50">
+            <span className="text-sm text-gray-600">
+              {existingImages.length} image(s) available
+            </span>
+            <button
+              onClick={() => setShowExistingImagesDialog(false)}
+              className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Preview Modal */}
@@ -468,6 +632,9 @@ const ImageComparisonPage = () => {
         </div>
       )}
 
+      {/* Existing Images Dialog */}
+      {showExistingImagesDialog && <ExistingImagesDialog />}
+
       <div className="max-w-7xl mx-auto px-4 py-4">
         {/* Header */}
         <div className="text-center mb-4">
@@ -492,52 +659,91 @@ const ImageComparisonPage = () => {
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <h3 className="text-base font-bold text-gray-900 mb-1">Reference Image for AI Generation</h3>
-              <p className="text-xs text-gray-600">Upload a reference image to guide the AI generation process</p>
+              <p className="text-xs text-gray-600">
+                {referenceImage 
+                  ? 'Reference image selected. You can now generate AI images.' 
+                  : 'Upload a reference image or select from existing images to guide the AI generation process'
+                }
+              </p>
+              {referenceImage && (
+                <div className="mt-2 flex items-center space-x-2 text-xs">
+                  <div className="bg-green-100 text-green-800 px-2 py-1 rounded flex items-center">
+                    <svg className="h-3 w-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                    </svg>
+                    Ready for AI Generation
+                  </div>
+                </div>
+              )}
             </div>
             
-            {!referenceImage ? (
-              <label className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 cursor-pointer transition-colors text-sm">
-                <Upload className="h-4 w-4" />
-                <span>Upload Reference</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleReferenceImageUpload}
-                  className="hidden"
-                />
-              </label>
-            ) : (
-              <div className="flex items-center space-x-3">
-                <div className="relative">
-                  <img
-                    src={referenceImage}
-                    alt="Reference"
-                    className="w-20 h-20 object-cover rounded-lg border-2 border-purple-400 cursor-pointer hover:opacity-80 transition-opacity"
-                    onClick={() => setPreviewImage({ src: referenceImage, alt: 'Reference Image', label: 'Reference Image' })}
-                  />
-                  <button
-                    onClick={handleRemoveReferenceImage}
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
+            <div className="flex items-center space-x-3">
+              {!referenceImage ? (
+                <>
+                  <label className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 cursor-pointer transition-colors text-sm">
+                    <Upload className="h-4 w-4" />
+                    <span>Upload Reference</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleReferenceImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  {!isNewProduct && getAllExistingImages().length > 0 && (
+                    <button
+                      onClick={() => setShowExistingImagesDialog(true)}
+                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
+                    >
+                      <Images className="h-4 w-4" />
+                      <span>Select Existing Image</span>
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center space-x-3">
+                  <div className="relative">
+                    <img
+                      src={referenceImage}
+                      alt="Reference"
+                      className="w-20 h-20 object-cover rounded-lg border-2 border-purple-400 cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => setPreviewImage({ src: referenceImage, alt: 'Reference Image', label: 'Reference Image' })}
+                    />
+                    <button
+                      onClick={handleRemoveReferenceImage}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <div className="flex flex-col space-y-2">
+                    <label className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 cursor-pointer transition-colors text-sm">
+                      <Upload className="h-4 w-4" />
+                      <span>Change</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleReferenceImageUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    {!isNewProduct && getAllExistingImages().length > 0 && (
+                      <button
+                        onClick={() => setShowExistingImagesDialog(true)}
+                        className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
+                      >
+                        <Images className="h-4 w-4" />
+                        <span>Select Different</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <label className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 cursor-pointer transition-colors text-sm">
-                  <Upload className="h-4 w-4" />
-                  <span>Change</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleReferenceImageUpload}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
-          {/* Two or Three Column Layout with Overall Border */}
+        {/* Two or Three Column Layout with Overall Border */}
         <div className="bg-white rounded-lg shadow-lg border-2 border-gray-300 p-4">
           {isNewProduct ? (
             // New Product: Two columns layout (Gold Standard + AI Generated)
@@ -596,16 +802,6 @@ const ImageComparisonPage = () => {
           ) : (
             // Existing Product: Row-based selection layout
             <div>
-              {/* <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-                <p className="text-sm text-green-900 text-center font-medium">
-                  ⚠️ Please select ONE image per row (existing or generated) - Total 7 selections required
-                </p>
-                <p className="text-xs text-green-700 text-center mt-1">
-                  Selected: {selectedImages.filter(sel => sel !== null).length} / 7
-                </p>
-              </div> */}
-              
-              {/* Row-based layout */}
               <div className="space-y-4">
                 {imageLabels.map((label, index) => {
                   const existingImg = getExistingImages()[index];
@@ -644,7 +840,6 @@ const ImageComparisonPage = () => {
                           <ImageCard
                             src={existingImg}
                             alt={`Existing ${label}`}
-                            // label={existingImg ? "Click to select" : "No image"}
                             type="current"
                             isSelected={selectedImages[index] === 0}
                             onSelect={existingImg ? () => handleImageSelection(index, 0) : null}
@@ -661,7 +856,6 @@ const ImageComparisonPage = () => {
                           <ImageCard
                             src={generatedImg.url}
                             alt={`AI generated ${label}`}
-                            // label={generatedImg.url ? "Click to select" : "Generate"}
                             type="generate"
                             index={index}
                             onGenerate={handleGenerateImage}
@@ -677,7 +871,9 @@ const ImageComparisonPage = () => {
               </div>
             </div>
           )}
-        </div>        {/* Action Bar */}
+        </div>
+
+        {/* Action Bar */}
         <div className="mt-4 bg-white rounded-lg shadow-sm border border-gray-200 p-3">
           <div className="flex items-center justify-between">
             <div className="text-xs text-gray-600">
@@ -694,7 +890,6 @@ const ImageComparisonPage = () => {
                   <span className="ml-2">
                     {selectedImages.filter(sel => sel !== null).length} of 7 selected
                   </span>
-                
                 </>
               )}
             </div>

@@ -3,22 +3,23 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchSheetData, fetchSellerData } from '../api/api';
-import { ChevronDown, Download, ArrowRight, Loader2 } from 'lucide-react';
+import { ChevronDown, Download, ArrowRight, Loader2, Search, X } from 'lucide-react';
 
 const DataSelectionPage = () => {
-
   const [selectedSeller, setSelectedSeller] = useState('');
   const [sellerData, setSellerData] = useState(null);
-  const [rawFilteredData, setRawFilteredData] = useState(null); // Store original API data for selected seller
-  const [tableHeaders, setTableHeaders] = useState([]); // Store headers from API
+  const [rawFilteredData, setRawFilteredData] = useState(null);
+  const [tableHeaders, setTableHeaders] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingDropdown, setIsLoadingDropdown] = useState(true); // Loading state for dropdown
+  const [isLoadingDropdown, setIsLoadingDropdown] = useState(true);
   const [error, setError] = useState(null);
   const [availableOptions, setAvailableOptions] = useState([]);
   const [rawSheetData, setRawSheetData] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const navigate = useNavigate();
 
-  // Fetch available sellers on component mount
+  // Fetch available sellers and stores on component mount
   useEffect(() => {
     const loadAvailableSellers = async () => {
       setIsLoadingDropdown(true);
@@ -31,14 +32,27 @@ const DataSelectionPage = () => {
           setTableHeaders(sheetData.headers);
         }
         
-        // Extract unique seller IDs from the actual sheet data
-        const uniqueSellerIds = [...new Set(sheetData.data.map(item => item.seller_id || item.Seller_ID || item['Seller ID']).filter(Boolean))];
-        const sellerOptions = uniqueSellerIds.map(sellerId => ({ 
-          id: sellerId, 
-          name: sellerId 
-        }));
+        // Create combined options with store names and seller IDs
+        const storeMap = new Map();
         
-        setAvailableOptions(sellerOptions);
+        sheetData.data.forEach(item => {
+          const sellerId = item.seller_id || item.Seller_ID || item['Seller ID'];
+          const storeName = item.store_name || item.Store_Name || item['Store Name'] || item.store || item.Store;
+          
+          if (sellerId && storeName) {
+            const key = `${storeName}-${sellerId}`;
+            if (!storeMap.has(key)) {
+              storeMap.set(key, {
+                id: sellerId,
+                storeName: storeName,
+                displayName: `${storeName} - (${sellerId})`
+              });
+            }
+          }
+        });
+        
+        const combinedOptions = Array.from(storeMap.values());
+        setAvailableOptions(combinedOptions);
       } catch (err) {
         console.error('Failed to load sellers:', err);
         setAvailableOptions([]);
@@ -50,12 +64,21 @@ const DataSelectionPage = () => {
     loadAvailableSellers();
   }, []);
 
-  const handleSellerChange = async (sellerId) => {
+  // Filter options based on search term
+  const filteredOptions = availableOptions.filter(option =>
+    option.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    option.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    option.storeName.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const handleSellerChange = async (sellerId, storeName) => {
     if (!sellerId) {
       setSelectedSeller('');
       setSellerData(null);
       setRawFilteredData(null);
       setError(null);
+      setIsDropdownOpen(false);
+      setSearchTerm('');
       return;
     }
 
@@ -64,6 +87,8 @@ const DataSelectionPage = () => {
     setError(null);
     setSellerData(null);
     setRawFilteredData(null);
+    setIsDropdownOpen(false);
+    setSearchTerm('');
 
     try {
       // Filter the raw sheet data by seller_id
@@ -114,6 +139,18 @@ const DataSelectionPage = () => {
     window.URL.revokeObjectURL(url);
   };
 
+  // Clear search and close dropdown
+  const clearSearch = () => {
+    setSearchTerm('');
+  };
+
+  // Get selected store name for display
+  const getSelectedDisplayName = () => {
+    if (!selectedSeller) return '';
+    const selectedOption = availableOptions.find(option => option.id === selectedSeller);
+    return selectedOption ? selectedOption.displayName : selectedSeller;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-6 py-8">
@@ -122,39 +159,102 @@ const DataSelectionPage = () => {
           <div className="text-center space-y-3">
             <h1 className="text-2xl font-bold text-gray-900">Select Seller Data</h1>
             <p className="text-base text-gray-600 max-w-2xl mx-auto">
-              Choose a seller ID to load their listing data and begin the optimization process.
+              Search and select by Store Name or Seller ID to load listing data and begin the optimization process.
             </p>
           </div>
 
           {/* Seller Selection */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <div className="max-w-md mx-auto">
+            <div className="max-w-2xl mx-auto">
               <label htmlFor="seller-select" className="block text-sm font-medium text-gray-700 mb-2">
-                Select Seller ID
+                Search Store or Seller
               </label>
+              
+              {/* Custom Dropdown */}
               <div className="relative">
-                <select
-                  id="seller-select"
-                  value={selectedSeller}
-                  onChange={(e) => handleSellerChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none cursor-pointer text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                {/* Dropdown Trigger */}
+                <button
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-left text-sm flex items-center justify-between cursor-pointer hover:bg-gray-50"
                   disabled={isLoading || isLoadingDropdown}
                 >
-                  <option value="">
-                    {isLoadingDropdown ? 'Loading sellers...' : 'Choose a seller...'}
-                  </option>
-                  {availableOptions.map((seller) => (
-                    <option key={seller.id} value={seller.id}>
-                      {seller.name}
-                    </option>
-                  ))}
-                </select>
-                {isLoadingDropdown ? (
-                  <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-blue-600 animate-spin" />
-                ) : (
-                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                  <span className="truncate">
+                    {selectedSeller ? getSelectedDisplayName() : 'Select a store or seller...'}
+                  </span>
+                  {isLoadingDropdown ? (
+                    <Loader2 className="h-4 w-4 text-blue-600 animate-spin flex-shrink-0" />
+                  ) : (
+                    <ChevronDown className={`h-4 w-4 text-gray-400 flex-shrink-0 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                  )}
+                </button>
+
+                {/* Dropdown Menu */}
+                {isDropdownOpen && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-80 overflow-hidden">
+                    {/* Search Input */}
+                    <div className="p-2 border-b border-gray-200">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <input
+                          type="text"
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          placeholder="Search by store name or seller ID..."
+                          className="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                          autoFocus
+                        />
+                        {searchTerm && (
+                          <button
+                            onClick={clearSearch}
+                            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Options List */}
+                    <div className="overflow-y-auto max-h-60">
+                      {filteredOptions.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                          {isLoadingDropdown ? 'Loading...' : 'No stores or sellers found'}
+                        </div>
+                      ) : (
+                        filteredOptions.map((option) => (
+                          <button
+                            key={`${option.storeName}-${option.id}`}
+                            onClick={() => handleSellerChange(option.id, option.storeName)}
+                            className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none ${
+                              selectedSeller === option.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                            }`}
+                          >
+                            <div className="font-medium">{option.storeName}</div>
+                            <div className="text-xs text-gray-500 mt-1">Seller ID: {option.id}</div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Results Count */}
+                    {filteredOptions.length > 0 && (
+                      <div className="px-4 py-2 border-t border-gray-200 bg-gray-50 text-xs text-gray-500">
+                        {filteredOptions.length} result{filteredOptions.length !== 1 ? 's' : ''} found
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
+
+              {/* Selected Info */}
+              {selectedSeller && (
+                <div className="mt-3 p-3 bg-blue-50 rounded-md">
+                  <div className="text-sm text-blue-700">
+                    <span className="font-medium">Selected: </span>
+                    {getSelectedDisplayName()}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -165,7 +265,7 @@ const DataSelectionPage = () => {
                 <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
                 <div className="text-center">
                   <h3 className="text-lg font-medium text-gray-900">Loading Product Data</h3>
-                  <p className="text-gray-600">Fetching data for {selectedSeller}...</p>
+                  <p className="text-gray-600">Fetching data for {getSelectedDisplayName()}...</p>
                 </div>
                 {/* Skeleton loader */}
                 <div className="w-full max-w-4xl space-y-3 mt-6">
@@ -207,11 +307,11 @@ const DataSelectionPage = () => {
               }}
             >
               <div className="p-4 border-b border-gray-200">
-                <h3 className="text-base font-semibold text-gray-900">
-                  Listing Data for {selectedSeller}
-                </h3>
-                <p className="text-gray-600 mt-1 text-sm">
-                  Found {rawFilteredData.length} listings
+                <h2 className="text-base font-semibold text-gray-900">
+                  Listing Data for {getSelectedDisplayName()}
+                </h2>
+                <p className="text-gray-600 mt-1 text-m">
+                  Listings Found: <span className="font-bold text-blue-600">{rawFilteredData.length}</span>
                 </p>
               </div>
 
@@ -228,6 +328,9 @@ const DataSelectionPage = () => {
                         ))
                       ) : (
                         <>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Store Name
+                          </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Category
                           </th>
@@ -272,6 +375,9 @@ const DataSelectionPage = () => {
                         ) : (
                           <>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {item.store_name || item.Store_Name || item['Store Name'] || '-'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                               {item.Category || '-'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
@@ -340,7 +446,7 @@ const DataSelectionPage = () => {
                   1
                 </div>
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">Select Data</h3>
-                <p className="text-gray-600 text-xs">Choose your seller ID to load all your listing data for analysis</p>
+                <p className="text-gray-600 text-xs">Search and select by Store Name or Seller ID to load your listing data</p>
               </div>
               
               <div className="text-center p-4 bg-green-50 rounded-lg">
@@ -370,6 +476,14 @@ const DataSelectionPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Close dropdown when clicking outside */}
+      {isDropdownOpen && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={() => setIsDropdownOpen(false)}
+        />
+      )}
 
       <style jsx>{`
         @keyframes fadeInUp {
