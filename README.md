@@ -21,3 +21,4 @@
    - On Windows: `venv\Scripts\activate`
 4. Install requirements: `pip install -r requirements.txt`
 5. Run server: `python3 python-server.py`
+   
